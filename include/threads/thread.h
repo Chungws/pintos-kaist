@@ -92,6 +92,10 @@ struct thread {
   char name[16];             /* Name (for debugging purposes). */
   int priority;              /* Priority. */
 
+  /* Project 1 : alarm-clock */
+  int64_t wakeup_tick; /* Tick till wakeup */
+  /* Project 1 : alarm-clock */
+
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
@@ -132,6 +136,13 @@ const char *thread_name(void);
 
 void thread_exit(void) NO_RETURN;
 void thread_yield(void);
+
+/* Project 1 : alarm-clock */
+void thread_sleep(int64_t tick);
+void thread_wakeup(int64_t wakeup_tick);
+int64_t thread_get_min_wakeup_tick(void);
+void thread_check_then_update_min_wakeup_tick(int64_t new_tick);
+/* Project 1 : alarm-clock */
 
 int thread_get_priority(void);
 void thread_set_priority(int);
