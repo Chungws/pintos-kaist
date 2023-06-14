@@ -30,6 +30,12 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* Project 1 : alarm-clock*/
+/* List of processes in THREAD_BLOCKED state*/
+static struct list sleep_list;
+static int64_t min_wakeup_tick;
+/* Project 1 : alram-clock*/
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -106,6 +112,10 @@ void thread_init(void) {
   lock_init(&tid_lock);
   list_init(&ready_list);
   list_init(&destruction_req);
+  /* Project 1 : alarm-clock */
+  list_init(&sleep_list);
+  min_wakeup_tick = INT64_MAX;
+  /* Project 1 : alarm-clock */
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread();
@@ -285,6 +295,53 @@ void thread_yield(void) {
   do_schedule(THREAD_READY);
   intr_set_level(old_level);
 }
+
+/* Project 1 : alarm-clock */
+/* Insert the current thread to sleep list. Then schedule next thread.*/
+void thread_sleep(int64_t tick) {
+  struct thread *curr = thread_current();
+  enum intr_level old_level;
+
+  ASSERT(!intr_context());
+
+  old_level = intr_disable();
+  if (curr != idle_thread) {
+    curr->wakeup_tick = tick;
+    list_push_back(&sleep_list, &curr->elem);
+    thread_check_then_update_min_wakeup_tick(tick);
+  }
+  do_schedule(THREAD_BLOCKED);
+  intr_set_level(old_level);
+}
+
+/* Wakes up threads in the sleep list that have a wakeup tick greater than the
+ * global tick. */
+void thread_wakeup(int64_t wakeup_tick) {
+  min_wakeup_tick = INT64_MAX;
+  struct list_elem *e = list_begin(&sleep_list);
+  struct thread *t;
+
+  while (e != list_end(&sleep_list)) {
+    t = list_entry(e, struct thread, elem);
+    if (wakeup_tick >= t->wakeup_tick) {
+      e = list_remove(e);
+      t->wakeup_tick = 0;
+      thread_unblock(t);
+      continue;
+    }
+    thread_check_then_update_min_wakeup_tick(t->wakeup_tick);
+    e = list_next(e);
+  }
+}
+
+/* Get minimum wakeup tick of threads in sleep_list. */
+int64_t thread_get_min_wakeup_tick(void) { return min_wakeup_tick; }
+
+/* Update minimum wakeup tick. */
+void thread_check_then_update_min_wakeup_tick(int64_t new_tick) {
+  min_wakeup_tick = min_wakeup_tick > new_tick ? new_tick : min_wakeup_tick;
+}
+/* Project 1 : alarm-clock */
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority) {

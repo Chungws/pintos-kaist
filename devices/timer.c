@@ -87,7 +87,13 @@ void timer_sleep(int64_t ticks) {
   int64_t start = timer_ticks();
 
   ASSERT(intr_get_level() == INTR_ON);
-  while (timer_elapsed(start) < ticks) thread_yield();
+
+  /* Project 1 : alarm-clock */
+  // while (timer_elapsed(start) < ticks) thread_yield();
+  if (ticks > 0) {
+    thread_sleep(start + ticks);
+  }
+  /* Project 1 : alarm-clock */
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -108,6 +114,14 @@ void timer_print_stats(void) {
 static void timer_interrupt(struct intr_frame *args UNUSED) {
   ticks++;
   thread_tick();
+
+  /* Project 1 : alarm-clock */
+  int64_t min_wakeup_tick = thread_get_min_wakeup_tick();
+
+  if (ticks >= min_wakeup_tick) {
+    thread_wakeup(min_wakeup_tick);
+  }
+  /* Project 1 : alarm-clock */
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
