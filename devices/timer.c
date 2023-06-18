@@ -90,7 +90,7 @@ void timer_sleep(int64_t ticks) {
 
   /* Project 1 : alarm-clock */
   // while (timer_elapsed(start) < ticks) thread_yield();
-  if (ticks > 0) {
+  if (timer_ticks() < start + ticks) {
     thread_sleep(start + ticks);
   }
   /* Project 1 : alarm-clock */

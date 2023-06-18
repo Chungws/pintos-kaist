@@ -310,7 +310,7 @@ void thread_sleep(int64_t tick) {
     list_push_back(&sleep_list, &curr->elem);
     thread_check_then_update_min_wakeup_tick(tick);
   }
-  do_schedule(THREAD_BLOCKED);
+  thread_block();
   intr_set_level(old_level);
 }
 
