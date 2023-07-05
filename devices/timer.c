@@ -116,10 +116,8 @@ static void timer_interrupt(struct intr_frame *args UNUSED) {
   thread_tick();
 
   /* Project 1 : alarm-clock */
-  int64_t min_wakeup_tick = thread_get_min_wakeup_tick();
-
-  if (ticks >= min_wakeup_tick) {
-    thread_wakeup(min_wakeup_tick);
+  if (ticks >= thread_get_min_wakeup_tick()) {
+    thread_wakeup(ticks);
   }
   /* Project 1 : alarm-clock */
 }

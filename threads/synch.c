@@ -34,6 +34,12 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/* Project 1 : priority */
+static bool sema_cmp_more_priority(const struct list_elem *a_,
+                                   const struct list_elem *b_,
+                                   void *aux UNUSED);
+/* Project 1 : priority */
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -66,7 +72,10 @@ void sema_down(struct semaphore *sema) {
 
   old_level = intr_disable();
   while (sema->value == 0) {
-    list_push_back(&sema->waiters, &thread_current()->elem);
+    /* Project 1 : priority */
+    list_insert_ordered(&sema->waiters, &thread_current()->elem,
+                        thread_cmp_more_priority, NULL);
+    /* Project 1 : priority */
     thread_block();
   }
   sema->value--;
@@ -105,10 +114,19 @@ void sema_up(struct semaphore *sema) {
   ASSERT(sema != NULL);
 
   old_level = intr_disable();
-  if (!list_empty(&sema->waiters))
+  if (!list_empty(&sema->waiters)) {
+    /* Project 1 : priority */
+    list_sort(&sema->waiters, thread_cmp_more_priority, NULL);
+    /* Project 1 : priority */
     thread_unblock(
         list_entry(list_pop_front(&sema->waiters), struct thread, elem));
+  }
   sema->value++;
+
+  /* Project 1 : priority */
+  thread_check_then_yield();
+  /* Project 1 : priority */
+
   intr_set_level(old_level);
 }
 
@@ -178,8 +196,22 @@ void lock_acquire(struct lock *lock) {
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
 
+  /* Project 1 : priority */
+  struct thread *curr = thread_current();
+  if (lock->holder != NULL) {
+    curr->wait_on_lock = lock;
+    list_insert_ordered(&lock->holder->donations, &curr->donation_elem,
+                        thread_donation_cmp_more_priority, NULL);
+    thread_donate_priority();
+  }
+  /* Project 1 : priority */
+
   sema_down(&lock->semaphore);
-  lock->holder = thread_current();
+
+  /* Project 1 : priority */
+  curr->wait_on_lock = NULL;
+  lock->holder = curr;
+  /* Project 1 : priority */
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -208,6 +240,11 @@ bool lock_try_acquire(struct lock *lock) {
 void lock_release(struct lock *lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
+
+  /* Project 1 : priority */
+  thread_remove_donations(lock);
+  thread_refresh_donations();
+  /* Project 1 : priority */
 
   lock->holder = NULL;
   sema_up(&lock->semaphore);
@@ -266,7 +303,10 @@ void cond_wait(struct condition *cond, struct lock *lock) {
   ASSERT(lock_held_by_current_thread(lock));
 
   sema_init(&waiter.semaphore, 0);
-  list_push_back(&cond->waiters, &waiter.elem);
+  /* Project 1 : priority */
+  list_insert_ordered(&cond->waiters, &waiter.elem, sema_cmp_more_priority,
+                      NULL);
+  /* Project 1 : priority */
   lock_release(lock);
   sema_down(&waiter.semaphore);
   lock_acquire(lock);
@@ -285,11 +325,32 @@ void cond_signal(struct condition *cond, struct lock *lock UNUSED) {
   ASSERT(!intr_context());
   ASSERT(lock_held_by_current_thread(lock));
 
-  if (!list_empty(&cond->waiters))
+  if (!list_empty(&cond->waiters)) {
+    /* Project 1 : priority */
+    list_sort(&cond->waiters, sema_cmp_more_priority, NULL);
+    /* Project 1 : priority */
     sema_up(
         &list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem)
              ->semaphore);
+  }
 }
+
+/* Project 1 : priority */
+
+/* Returns true if semaphore A's first waiter priority is bigger than semaphore
+   B's first waiter priority, false otherwise. */
+static bool sema_cmp_more_priority(const struct list_elem *a_,
+                                   const struct list_elem *b_,
+                                   void *aux UNUSED) {
+  struct semaphore_elem *a = list_entry(a_, struct semaphore_elem, elem);
+  struct semaphore_elem *b = list_entry(b_, struct semaphore_elem, elem);
+
+  const struct list_elem *e_a = list_begin(&a->semaphore.waiters);
+  const struct list_elem *e_b = list_begin(&b->semaphore.waiters);
+
+  return thread_cmp_more_priority(e_a, e_b, NULL);
+}
+/* Project 1 : priority */
 
 /* Wakes up all threads, if any, waiting on COND (protected by
    LOCK).  LOCK must be held before calling this function.

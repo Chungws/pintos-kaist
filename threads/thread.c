@@ -207,6 +207,10 @@ tid_t thread_create(const char *name, int priority, thread_func *function,
   /* Add to run queue. */
   thread_unblock(t);
 
+  /* Project 1 : priority */
+  thread_check_then_yield();
+  /* Project 1 : priority */
+
   return tid;
 }
 
@@ -238,7 +242,9 @@ void thread_unblock(struct thread *t) {
 
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
-  list_push_back(&ready_list, &t->elem);
+  /* Project 1 : priority */
+  list_insert_ordered(&ready_list, &t->elem, thread_cmp_more_priority, NULL);
+  /* Project 1 : priority */
   t->status = THREAD_READY;
   intr_set_level(old_level);
 }
@@ -291,12 +297,18 @@ void thread_yield(void) {
   ASSERT(!intr_context());
 
   old_level = intr_disable();
-  if (curr != idle_thread) list_push_back(&ready_list, &curr->elem);
+  /* Project 1 : priority */
+  if (curr != idle_thread) {
+    list_insert_ordered(&ready_list, &curr->elem, thread_cmp_more_priority,
+                        NULL);
+  }
+  /* Project 1 : priority */
   do_schedule(THREAD_READY);
   intr_set_level(old_level);
 }
 
 /* Project 1 : alarm-clock */
+
 /* Insert the current thread to sleep list. Then schedule next thread.*/
 void thread_sleep(int64_t tick) {
   struct thread *curr = thread_current();
@@ -343,9 +355,93 @@ void thread_check_then_update_min_wakeup_tick(int64_t new_tick) {
 }
 /* Project 1 : alarm-clock */
 
+/* Project 1 : priority */
+
+/* Returns true if thread A's priority is bigger than thread B's priority, false
+   otherwise. */
+bool thread_cmp_more_priority(const struct list_elem *a_,
+                              const struct list_elem *b_, void *aux UNUSED) {
+  const struct thread *a = list_entry(a_, struct thread, elem);
+  const struct thread *b = list_entry(b_, struct thread, elem);
+
+  return a->priority > b->priority;
+}
+
+/* Returns true if thread A's priority is bigger than thread B's priority with
+   donation_elem, false otherwise. */
+bool thread_donation_cmp_more_priority(const struct list_elem *a_,
+                                       const struct list_elem *b_,
+                                       void *aux UNUSED) {
+  const struct thread *a = list_entry(a_, struct thread, donation_elem);
+  const struct thread *b = list_entry(b_, struct thread, donation_elem);
+
+  return a->priority > b->priority;
+}
+
+/* Call thread_yield() when the priority of ready_list's first thread is bigger
+   than the priority of current thread. */
+void thread_check_then_yield(void) {
+  struct list_elem *first = list_begin(&ready_list);
+  struct list_elem *curr = &thread_current()->elem;
+
+  if (thread_cmp_more_priority(first, curr, NULL)) {
+    thread_yield();
+  }
+}
+
+/* Remove threads in current thread's donations with the lock. */
+void thread_remove_donations(struct lock *lock) {
+  struct thread *curr = thread_current();
+  if (!list_empty(&curr->donations)) {
+    struct list_elem *e = list_begin(&curr->donations);
+    while (e != list_end(&curr->donations)) {
+      struct thread *t = list_entry(e, struct thread, donation_elem);
+      if (t->wait_on_lock == lock) {
+        e = list_remove(e);
+        continue;
+      }
+      e = list_next(e);
+    }
+  }
+}
+
+/* Refresh current priority by current thread's donations. */
+void thread_refresh_donations(void) {
+  struct thread *curr = thread_current();
+  curr->priority = curr->init_priority;
+
+  if (!list_empty(&curr->donations)) {
+    list_sort(&curr->donations, thread_donation_cmp_more_priority, NULL);
+    struct thread *t =
+        list_entry(list_begin(&curr->donations), struct thread, donation_elem);
+    if (t->priority > curr->priority) {
+      curr->priority = t->priority;
+    }
+  }
+}
+
+/* Donate nested priority by wait_on_lock. */
+void thread_donate_priority(void) {
+  struct thread *t = thread_current();
+  int cur_priority = t->priority;
+
+  while (true) {
+    if (t->wait_on_lock == NULL) {
+      break;
+    }
+    t = t->wait_on_lock->holder;
+    t->priority = cur_priority;
+  }
+}
+/* Project 1 : priority */
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority) {
-  thread_current()->priority = new_priority;
+  /* Project 1 : priority */
+  thread_current()->init_priority = new_priority;
+  thread_refresh_donations();
+  thread_check_then_yield();
+  /* Project 1 : priority */
 }
 
 /* Returns the current thread's priority. */
@@ -430,6 +526,11 @@ static void init_thread(struct thread *t, const char *name, int priority) {
   t->status = THREAD_BLOCKED;
   strlcpy(t->name, name, sizeof t->name);
   t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
+  /* Project 1 : priority */
+  t->init_priority = priority;
+  t->wait_on_lock = NULL;
+  list_init(&t->donations);
+  /* Project 1 : priority */
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 }
