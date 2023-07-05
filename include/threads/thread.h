@@ -6,6 +6,9 @@
 #include <stdint.h>
 
 #include "threads/interrupt.h"
+/* Project 1 : priority */
+#include "threads/synch.h"
+/* Project 1 : priority */
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -96,6 +99,13 @@ struct thread {
   int64_t wakeup_tick; /* Tick till wakeup */
   /* Project 1 : alarm-clock */
 
+  /* Project 1 : priority */
+  int init_priority;
+  struct lock *wait_on_lock;
+  struct list donations;
+  struct list_elem donation_elem;
+  /* Project 1 : priority */
+
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
@@ -143,6 +153,17 @@ void thread_wakeup(int64_t wakeup_tick);
 int64_t thread_get_min_wakeup_tick(void);
 void thread_check_then_update_min_wakeup_tick(int64_t new_tick);
 /* Project 1 : alarm-clock */
+/* Project 1 : priority */
+bool thread_cmp_more_priority(const struct list_elem *a_,
+                              const struct list_elem *b_, void *aux UNUSED);
+bool thread_donation_cmp_more_priority(const struct list_elem *a_,
+                                       const struct list_elem *b_,
+                                       void *aux UNUSED);
+void thread_check_then_yield(void);
+void thread_remove_donations(struct lock *lock);
+void thread_refresh_donations(void);
+void thread_donate_priority(void);
+/* Project 1 : priority */
 
 int thread_get_priority(void);
 void thread_set_priority(int);
