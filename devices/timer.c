@@ -115,6 +115,17 @@ static void timer_interrupt(struct intr_frame *args UNUSED) {
   ticks++;
   thread_tick();
 
+  /* Project 1 : mlfqs */
+  if (thread_mlfqs) {
+    thread_increase_one_current_recent_cpu();
+    if (ticks % TIMER_FREQ == 0) {
+      thread_recalculate_recent_cpu_to_all_threads();
+    }
+    if (ticks % 4 == 0) {
+      thread_recalculate_mlfqs_priority_to_all_threads();
+    }
+  }
+  /* Project 1 : mlfqs */
   /* Project 1 : alarm-clock */
   if (ticks >= thread_get_min_wakeup_tick()) {
     thread_wakeup(ticks);
