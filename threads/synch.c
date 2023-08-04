@@ -198,7 +198,9 @@ void lock_acquire(struct lock *lock) {
 
   /* Project 1 : priority */
   struct thread *curr = thread_current();
-  if (lock->holder != NULL) {
+  /* Project 1 : mlfqs */
+  if (lock->holder != NULL && !thread_mlfqs) {
+    /* Project 1 : mlfqs */
     curr->wait_on_lock = lock;
     list_insert_ordered(&lock->holder->donations, &curr->donation_elem,
                         thread_donation_cmp_more_priority, NULL);
@@ -241,10 +243,14 @@ void lock_release(struct lock *lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
 
-  /* Project 1 : priority */
-  thread_remove_donations(lock);
-  thread_refresh_donations();
-  /* Project 1 : priority */
+  /* Project 1 : mlfqs */
+  if (!thread_mlfqs) {
+    /* Project 1 : priority */
+    thread_remove_donations(lock);
+    thread_refresh_donations();
+    /* Project 1 : priority */
+  }
+  /* Project 1 : mlfqs */
 
   lock->holder = NULL;
   sema_up(&lock->semaphore);

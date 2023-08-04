@@ -36,6 +36,12 @@ static struct list sleep_list;
 static int64_t min_wakeup_tick;
 /* Project 1 : alram-clock*/
 
+/* Project 1 : mlfqs */
+static struct list total_list;
+static int g_load_avg;
+static struct list multi_ready_queues[PRI_MAX + 1];
+/* Project 1 : mlfqs */
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -70,6 +76,13 @@ static void init_thread(struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
+
+/* Project 1 : mlfqs */
+void init_multi_ready_queues(void);
+struct list_elem *list_begin_multi_ready_queues(void);
+size_t list_size_multi_ready_queues(void);
+static struct thread *next_thread_to_run_multi_ready_queues(void);
+/* Project 1 : mlfqs */
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -116,6 +129,13 @@ void thread_init(void) {
   list_init(&sleep_list);
   min_wakeup_tick = INT64_MAX;
   /* Project 1 : alarm-clock */
+  /* Project 1 : mlfqs */
+  if (thread_mlfqs) {
+    list_init(&total_list);
+    g_load_avg = 0;
+    init_multi_ready_queues();
+  }
+  /* Project 1 : mlfqs */
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread();
@@ -242,9 +262,15 @@ void thread_unblock(struct thread *t) {
 
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
-  /* Project 1 : priority */
-  list_insert_ordered(&ready_list, &t->elem, thread_cmp_more_priority, NULL);
-  /* Project 1 : priority */
+  /* Project 1 : mlfqs */
+  if (!thread_mlfqs) {
+    /* Project 1 : priority */
+    list_insert_ordered(&ready_list, &t->elem, thread_cmp_more_priority, NULL);
+    /* Project 1 : priority */
+  } else {
+    list_push_back(&multi_ready_queues[t->priority], &t->elem);
+  }
+  /* Project 1 : mlfqs */
   t->status = THREAD_READY;
   intr_set_level(old_level);
 }
@@ -299,8 +325,14 @@ void thread_yield(void) {
   old_level = intr_disable();
   /* Project 1 : priority */
   if (curr != idle_thread) {
-    list_insert_ordered(&ready_list, &curr->elem, thread_cmp_more_priority,
-                        NULL);
+    /* Project 1 : mlfqs */
+    if (!thread_mlfqs) {
+      list_insert_ordered(&ready_list, &curr->elem, thread_cmp_more_priority,
+                          NULL);
+    } else {
+      list_push_back(&multi_ready_queues[curr->priority], &curr->elem);
+    }
+    /* Project 1 : mlfqs */
   }
   /* Project 1 : priority */
   do_schedule(THREAD_READY);
@@ -381,11 +413,22 @@ bool thread_donation_cmp_more_priority(const struct list_elem *a_,
 /* Call thread_yield() when the priority of ready_list's first thread is bigger
    than the priority of current thread. */
 void thread_check_then_yield(void) {
-  struct list_elem *first = list_begin(&ready_list);
+  /* Project 1 : mlfqs */
+  struct list_elem *first;
+  if (!thread_mlfqs) {
+    first = list_begin(&ready_list);
+  } else {
+    first = list_begin_multi_ready_queues();
+  }
+  /* Project 1 : mlfqs */
   struct list_elem *curr = &thread_current()->elem;
 
-  if (thread_cmp_more_priority(first, curr, NULL)) {
-    thread_yield();
+  if (first != NULL && thread_cmp_more_priority(first, curr, NULL)) {
+    if (!intr_context()) {
+      thread_yield();
+    } else {
+      intr_yield_on_return();
+    }
   }
 }
 
@@ -437,6 +480,10 @@ void thread_donate_priority(void) {
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority) {
+  /* Project 1 : mlfqs */
+  if (thread_mlfqs) return;
+  /* Project 1 : mlfqs */
+
   /* Project 1 : priority */
   thread_current()->init_priority = new_priority;
   thread_refresh_donations();
@@ -447,28 +494,174 @@ void thread_set_priority(int new_priority) {
 /* Returns the current thread's priority. */
 int thread_get_priority(void) { return thread_current()->priority; }
 
+/* Project 1 : mlfqs */
+
+/* Fixed point calculation util functions */
+int convert_int_to_fp(int int_num) {
+  int f = 1 << 14;
+  return int_num * f;
+}
+
+int convert_fp_to_int(int fp_num) {
+  int f = 1 << 14;
+  int result = fp_num;
+  if (fp_num >= 0) {
+    result += (f / 2);
+  } else {
+    result -= (f / 2);
+  }
+  return result / f;
+}
+
+int fp_add_int_return_fp(int fp_num, int int_num) {
+  return fp_num + convert_int_to_fp(int_num);
+}
+
+int int_sub_fp_return_int(int int_num, int fp_num) {
+  int result = convert_int_to_fp(int_num) - fp_num;
+  return convert_fp_to_int(result);
+}
+
+int fp_mul_fp_retrun_fp(int fp_first, int fp_second) {
+  int f = 1 << 14;
+  return ((int64_t)fp_first) * fp_second / f;
+}
+
+int fp_div_fp_return_fp(int fp_first, int fp_second) {
+  int f = 1 << 14;
+  return ((int64_t)fp_first) * f / fp_second;
+}
+
+int int_div_int_return_fp(int int_first, int int_second) {
+  int f_first = convert_int_to_fp(int_first);
+  int f_second = convert_int_to_fp(int_second);
+  return fp_div_fp_return_fp(f_first, f_second);
+}
+
+/* Fixed point calculation util functions */
+
+void thread_recalculate_mlfqs_priority(struct thread *t);
+
 /* Sets the current thread's nice value to NICE. */
-void thread_set_nice(int nice UNUSED) {
-  /* TODO: Your implementation goes here */
+void thread_set_nice(int nice) {
+  enum intr_level old_level = intr_disable();
+  struct thread *curr = thread_current();
+  if (nice >= NICE_MAX) {
+    curr->nice = NICE_MAX;
+  } else if (nice <= NICE_MIN) {
+    curr->nice = NICE_MIN;
+  } else {
+    curr->nice = nice;
+  }
+  thread_recalculate_mlfqs_priority(curr);
+  thread_check_then_yield();
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
 int thread_get_nice(void) {
-  /* TODO: Your implementation goes here */
-  return 0;
+  enum intr_level old_level = intr_disable();
+  struct thread *curr = thread_current();
+  int nice = curr->nice;
+  intr_set_level(old_level);
+  return nice;
 }
 
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void) {
-  /* TODO: Your implementation goes here */
-  return 0;
+  enum intr_level old_level = intr_disable();
+  int load_avg = convert_fp_to_int(g_load_avg * 100);
+  intr_set_level(old_level);
+  return load_avg;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void) {
-  /* TODO: Your implementation goes here */
-  return 0;
+  enum intr_level old_level = intr_disable();
+  struct thread *curr = thread_current();
+  int recent_cpu = convert_fp_to_int(curr->recent_cpu * 100);
+  intr_set_level(old_level);
+  return recent_cpu;
 }
+
+/* Calculate mlfqs priority using recent_cpu and nice. */
+void thread_recalculate_mlfqs_priority(struct thread *t) {
+  /* Priority = PRI_MAX – (recent_cpu/4) – (nice*2) */
+  if (t == idle_thread) return;
+  int old_priority = t->priority;
+  int result = PRI_MAX - (2 * t->nice);
+  result = int_sub_fp_return_int(result, (t->recent_cpu / 4));
+  if (result > PRI_MAX) {
+    result = PRI_MAX;
+  } else if (result < PRI_MIN) {
+    result = PRI_MIN;
+  }
+  t->priority = result;
+  /* Project 1 : mlfqs */
+  if (old_priority != t->priority && t->status == THREAD_READY &&
+      t != thread_current()) {
+    list_remove(&t->elem);
+    list_push_back(&multi_ready_queues[t->priority], &t->elem);
+  }
+  /* Project 1 : mlfqs */
+}
+
+/* Calculate adjusted recent_cpu using load_avg, recent_cpu and nice. */
+void thread_recalculate_recent_cpu(struct thread *t) {
+  /* recent_cpu = (2*load_avg)/(2*load_avg+1)*recent_cpu + nice */
+  if (t == idle_thread) return;
+  int f_numerator = 2 * g_load_avg;
+  int f_denominator = fp_add_int_return_fp(2 * g_load_avg, 1);
+  int f_mul = fp_mul_fp_retrun_fp(
+      fp_div_fp_return_fp(f_numerator, f_denominator), t->recent_cpu);
+  t->recent_cpu = fp_add_int_return_fp(f_mul, t->nice);
+}
+
+/* Increase the recent_cpu value by 1. */
+void thread_increase_one_current_recent_cpu(void) {
+  struct thread *curr = thread_current();
+  curr->recent_cpu = fp_add_int_return_fp(curr->recent_cpu, 1);
+}
+
+/* Calculate load_avg using load_avg and ready_threads. */
+void thread_recalculate_load_avg(void) {
+  /* Project 1 : mlfqs */
+  int ready_threads =
+      thread_mlfqs ? list_size_multi_ready_queues() : list_size(&ready_list);
+  /* Project 1 : mlfqs */
+  if (thread_current() != idle_thread) ready_threads++;
+
+  int f_first = fp_mul_fp_retrun_fp(int_div_int_return_fp(59, 60), g_load_avg);
+  int f_second = int_div_int_return_fp(1, 60) * ready_threads;
+  g_load_avg = f_first + f_second;
+}
+
+/* Calculate mlfqs priority to all threads. */
+void thread_recalculate_mlfqs_priority_to_all_threads(void) {
+  struct list_elem *e;
+  struct thread *t;
+
+  for (e = list_begin(&total_list); e != list_end(&total_list);
+       e = list_next(e)) {
+    t = list_entry(e, struct thread, total_elem);
+    if (t == idle_thread) continue;
+    thread_recalculate_mlfqs_priority(t);
+  }
+}
+
+/* Calculate recent_cpu to all threads. */
+void thread_recalculate_recent_cpu_to_all_threads(void) {
+  struct list_elem *e;
+  struct thread *t;
+  thread_recalculate_load_avg();
+  for (e = list_begin(&total_list); e != list_end(&total_list);
+       e = list_next(e)) {
+    t = list_entry(e, struct thread, total_elem);
+    if (t == idle_thread) continue;
+    thread_recalculate_recent_cpu(t);
+  }
+}
+/* Project 1 : mlfqs */
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -531,7 +724,21 @@ static void init_thread(struct thread *t, const char *name, int priority) {
   t->wait_on_lock = NULL;
   list_init(&t->donations);
   /* Project 1 : priority */
-  t->priority = priority;
+  /* Project 1 : mlfqs */
+  if (thread_mlfqs) {
+    if (t == initial_thread) {
+      t->nice = NICE_DEFAULT;
+      t->recent_cpu = 0;
+    } else {
+      t->nice = thread_current()->nice;
+      t->recent_cpu = thread_current()->recent_cpu;
+    }
+    thread_recalculate_mlfqs_priority(t);
+    list_push_back(&total_list, &t->total_elem);
+  } else {
+    t->priority = priority;
+  }
+  /* Project 1 : mlfqs */
   t->magic = THREAD_MAGIC;
 }
 
@@ -663,7 +870,10 @@ static void do_schedule(int status) {
 
 static void schedule(void) {
   struct thread *curr = running_thread();
-  struct thread *next = next_thread_to_run();
+  /* Project 1 : mlfqs */
+  struct thread *next = thread_mlfqs ? next_thread_to_run_multi_ready_queues()
+                                     : next_thread_to_run();
+  /* Project 1 : mlfqs */
 
   ASSERT(intr_get_level() == INTR_OFF);
   ASSERT(curr->status != THREAD_RUNNING);
@@ -690,6 +900,11 @@ static void schedule(void) {
     if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
       ASSERT(curr != next);
       list_push_back(&destruction_req, &curr->elem);
+      /* Project 1 : mlfqs */
+      if (thread_mlfqs) {
+        list_remove(&curr->total_elem);
+      }
+      /* Project 1 : mlfqs */
     }
 
     /* Before switching the thread, we first save the information
@@ -709,3 +924,45 @@ static tid_t allocate_tid(void) {
 
   return tid;
 }
+
+/* Project 1 : mlfqs */
+
+/* Initialize multiple level queue. */
+void init_multi_ready_queues(void) {
+  for (int i = PRI_MIN; i <= PRI_MAX; i++) {
+    list_init(&multi_ready_queues[i]);
+  }
+}
+
+/* Return highest priority thread of multiple level queue. */
+struct list_elem *list_begin_multi_ready_queues(void) {
+  for (int i = PRI_MAX; i >= PRI_MIN; i--) {
+    if (!list_empty(&multi_ready_queues[i])) {
+      return list_begin(&multi_ready_queues[i]);
+    }
+  }
+  return NULL;
+}
+
+/* Return total number of threads in multiple level queue. */
+size_t list_size_multi_ready_queues(void) {
+  size_t size = 0;
+  for (int i = PRI_MAX; i >= PRI_MIN; i--) {
+    if (!list_empty(&multi_ready_queues[i])) {
+      size += list_size(&multi_ready_queues[i]);
+    }
+  }
+  return size;
+}
+
+/* Pop and return highest priority thread of multiple level queue. */
+static struct thread *next_thread_to_run_multi_ready_queues(void) {
+  for (int i = PRI_MAX; i >= PRI_MIN; i--) {
+    if (!list_empty(&multi_ready_queues[i])) {
+      return list_entry(list_pop_front(&multi_ready_queues[i]), struct thread,
+                        elem);
+    }
+  }
+  return idle_thread;
+}
+/* Project 1 : mlfqs */
