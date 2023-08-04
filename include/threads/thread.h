@@ -31,6 +31,12 @@ typedef int tid_t;
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX 63     /* Highest priority. */
 
+/* Project 1 : mlfqs */
+#define NICE_MIN -20
+#define NICE_DEFAULT 0
+#define NICE_MAX 20
+/* Project 1 : mlfqs */
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -106,6 +112,12 @@ struct thread {
   struct list_elem donation_elem;
   /* Project 1 : priority */
 
+  /* Project 1 : mlfqs */
+  int nice;
+  int recent_cpu;
+  struct list_elem total_elem;
+  /* Project 1 : mlfqs */
+
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
@@ -172,6 +184,11 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+/* Project 1 : priority */
+void thread_increase_one_current_recent_cpu(void);
+void thread_recalculate_mlfqs_priority_to_all_threads(void);
+void thread_recalculate_recent_cpu_to_all_threads(void);
+/* Project 1 : priority */
 
 void do_iret(struct intr_frame *tf);
 
