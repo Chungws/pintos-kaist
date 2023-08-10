@@ -47,8 +47,14 @@ tid_t process_create_initd(const char *file_name) {
   if (fn_copy == NULL) return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
 
+  /* Project 2 : argument passing */
+  /* Parse first token of arguments for file name. */
+  char *file_name_parsed, *save_ptr;
+  file_name_parsed = strtok_r(file_name, " ", &save_ptr);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(file_name, PRI_DEFAULT, initd, fn_copy);
+  tid = thread_create(file_name_parsed, PRI_DEFAULT, initd, fn_copy);
+  /* Project 2 : argument passing */
   if (tid == TID_ERROR) palloc_free_page(fn_copy);
   return tid;
 }
@@ -144,6 +150,41 @@ error:
   thread_exit();
 }
 
+/* Project 2 : argument passing */
+void argument_stack(int argc, char **argv, struct intr_frame *_if) {
+  for (int i = argc - 1; i >= 0; i--) {
+    int arg_len = strlen(argv[i]) + 1;
+    _if->rsp -= arg_len;
+    memset((void *)_if->rsp, 0, arg_len);
+    memcpy((void *)_if->rsp, argv[i], arg_len);
+    argv[i] = (char *)_if->rsp;
+  }
+
+  // 8 byte word align
+  if (_if->rsp % 8 != 0) {
+    int word_align = _if->rsp % 8;
+    _if->rsp -= word_align;
+    memset((void *)_if->rsp, 0, word_align);
+  }
+
+  // for argv[argc]
+  _if->rsp -= 8;
+  memset((void *)_if->rsp, 0, 8);
+
+  for (int i = argc - 1; i >= 0; i--) {
+    _if->rsp -= 8;
+    memcpy((void *)_if->rsp, &argv[i], 8);
+  }
+
+  // for fake return address
+  _if->rsp -= 8;
+  memset((void *)_if->rsp, 0, 8);
+
+  _if->R.rdi = (uint64_t)argc;
+  _if->R.rsi = (uint64_t)_if->rsp + 8;
+}
+/* Project 2 : argument passing */
+
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int process_exec(void *f_name) {
@@ -161,8 +202,24 @@ int process_exec(void *f_name) {
   /* We first kill the current context */
   process_cleanup();
 
+  /* Project 2 : argument passing */
+  char *token, *save_ptr;
+  char *argv[64];
+  int argc = 0;
+
+  for (token = strtok_r(file_name, " ", &save_ptr); token != NULL;
+       token = strtok_r(NULL, " ", &save_ptr)) {
+    argv[argc] = token;
+    argc++;
+  }
+
   /* And then load the binary */
-  success = load(file_name, &_if);
+  success = load(argv[0], &_if);
+
+  /* Set arguments in user stack */
+  argument_stack(argc, argv, &_if);
+  // hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+  /* Project 2 : argument passing */
 
   /* If load failed, quit. */
   palloc_free_page(file_name);
@@ -186,6 +243,10 @@ int process_wait(tid_t child_tid UNUSED) {
   /* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
    * XXX:       to add infinite loop here before
    * XXX:       implementing the process_wait. */
+  /* Project 2 : argument passing */
+  while (1) {
+  }
+  /* Project 2 : argument passing */
   return -1;
 }
 
