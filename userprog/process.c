@@ -25,19 +25,35 @@
 #endif
 
 static void process_cleanup(void);
-static bool load(const char *file_name, struct intr_frame *if_);
+static bool load(const char *cmd_line, struct intr_frame *if_);
 static void initd(void *f_name);
 static void __do_fork(void *);
+struct process_desc *find_child_desc(tid_t tid);
+
+static struct lock filesys_lock;
+
+struct initd_args {
+  char *file_name;
+  struct proc_desc *pd;
+};
+
+struct fork_args {
+  struct thread *parent;
+  struct proc_desc *pd;
+};
 
 /* General process initializer for initd and other process. */
-static void process_init(void) { struct thread *current = thread_current(); }
+static void process_init(void) {
+  struct thread *current = thread_current();
+  lock_init(&filesys_lock);
+}
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
  * The new thread may be scheduled (and may even exit)
  * before process_create_initd() returns. Returns the initd's
  * thread id, or TID_ERROR if the thread cannot be created.
  * Notice that THIS SHOULD BE CALLED ONCE. */
-tid_t process_create_initd(const char *file_name) {
+tid_t process_create_initd(const char *cmd_line) {
   char *fn_copy;
   tid_t tid;
 
@@ -45,37 +61,96 @@ tid_t process_create_initd(const char *file_name) {
    * Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page(0);
   if (fn_copy == NULL) return TID_ERROR;
-  strlcpy(fn_copy, file_name, PGSIZE);
+  strlcpy(fn_copy, cmd_line, PGSIZE);
 
   /* Project 2 : argument passing */
   /* Parse first token of arguments for file name. */
-  char *file_name_parsed, *save_ptr;
-  file_name_parsed = strtok_r(file_name, " ", &save_ptr);
+  char *file_name, *save_ptr;
+  file_name = strtok_r(cmd_line, " ", &save_ptr);
+
+  struct process_desc *pd;
+  pd = palloc_get_page(0);
+  if (pd == NULL) return TID_ERROR;
+  sema_init(&pd->wait_sema, 0);
+  sema_init(&pd->fork_sema, 0);
+  for (int i = 0; i < 128; i++) {
+    pd->file_desc[i] = NULL;
+  }
+  pd->exit_status = -1;
+  pd->is_terminated = false;
+
+  struct initd_args args;
+  args.file_name = fn_copy;
+  args.pd = pd;
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(file_name_parsed, PRI_DEFAULT, initd, fn_copy);
+  tid = thread_create(file_name, PRI_DEFAULT, initd, &args);
+  sema_down(&pd->fork_sema);
+
   /* Project 2 : argument passing */
-  if (tid == TID_ERROR) palloc_free_page(fn_copy);
+  if (tid == TID_ERROR) {
+    palloc_free_page(fn_copy);
+    palloc_free_page(pd);
+  } else {
+    struct thread *cur = thread_current();
+    struct thread *t = thread_find_tid(tid);
+    if (t == NULL) {
+      palloc_free_page(fn_copy);
+      palloc_free_page(pd);
+      return TID_ERROR;
+    }
+    pd->pid = tid;
+    list_push_back(&cur->child_list, &pd->child_elem);
+  }
+
   return tid;
 }
 
 /* A thread function that launches first user process. */
-static void initd(void *f_name) {
+static void initd(void *_initd_args) {
 #ifdef VM
   supplemental_page_table_init(&thread_current()->spt);
 #endif
 
-  process_init();
+  struct initd_args *args = (struct initd_args *)_initd_args;
+  struct proc_desc *pd = args->pd;
+  struct thread *curr = thread_current();
 
-  if (process_exec(f_name) < 0) PANIC("Fail to launch initd\n");
+  process_init();
+  curr->proc_desc = pd;
+  sema_up(&curr->proc_desc->fork_sema);
+
+  if (process_exec(args->file_name) < 0) PANIC("Fail to launch initd\n");
   NOT_REACHED();
 }
 
 /* Clones the current process as `name`. Returns the new process's thread id, or
  * TID_ERROR if the thread cannot be created. */
-tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED) {
+tid_t process_fork(const char *name, struct intr_frame *if_) {
+  struct thread *cur = thread_current();
+  memcpy(&cur->proc_desc->parent_tf, if_, sizeof(struct intr_frame));
+
+  struct process_desc *pd;
+  pd = palloc_get_page(0);
+  if (pd == NULL) return TID_ERROR;
+  sema_init(&pd->wait_sema, 0);
+  sema_init(&pd->fork_sema, 0);
+  for (int i = 0; i < 128; i++) {
+    pd->file_desc[i] = NULL;
+  }
+
+  struct fork_args args = {thread_current(), pd};
+
   /* Clone current thread to new thread.*/
-  return thread_create(name, PRI_DEFAULT, __do_fork, thread_current());
+  tid_t tid = thread_create(name, PRI_DEFAULT, __do_fork, &args);
+  if (tid == TID_ERROR) {
+    palloc_free_page(pd);
+    return tid;
+  }
+  sema_down(&pd->fork_sema);
+  list_push_back(&cur->child_list, &pd->child_elem);
+
+  return tid;
 }
 
 #ifndef VM
@@ -89,21 +164,35 @@ static bool duplicate_pte(uint64_t *pte, void *va, void *aux) {
   bool writable;
 
   /* 1. TODO: If the parent_page is kernel page, then return immediately. */
+  if (is_kernel_vaddr(va)) return true;
 
   /* 2. Resolve VA from the parent's page map level 4. */
   parent_page = pml4_get_page(parent->pml4, va);
+  if (parent_page == NULL) {
+    printf("parent page not exist\n");
+    return false;
+  }
 
   /* 3. TODO: Allocate new PAL_USER page for the child and set result to
    *    TODO: NEWPAGE. */
+  newpage = palloc_get_page(PAL_USER);
+  if (newpage == NULL) {
+    printf("new page allocation failed\n");
+    return false;
+  }
 
   /* 4. TODO: Duplicate parent's page to the new page and
    *    TODO: check whether parent's page is writable or not (set WRITABLE
    *    TODO: according to the result). */
+  memcpy(newpage, parent_page, PGSIZE);
+  writable = is_writable(pte);
 
   /* 5. Add new page to child's page table at address VA with WRITABLE
    *    permission. */
   if (!pml4_set_page(current->pml4, va, newpage, writable)) {
     /* 6. TODO: if fail to insert page, do error handling. */
+    printf("new page is not addition failed\n");
+    return false;
   }
   return true;
 }
@@ -115,10 +204,12 @@ static bool duplicate_pte(uint64_t *pte, void *va, void *aux) {
  *       this function. */
 static void __do_fork(void *aux) {
   struct intr_frame if_;
-  struct thread *parent = (struct thread *)aux;
+  struct fork_args *f_args = (struct fork_args *)aux;
+  struct thread *parent = f_args->parent;
+  struct process_desc *pd = f_args->pd;
   struct thread *current = thread_current();
   /* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-  struct intr_frame *parent_if;
+  struct intr_frame *parent_if = &parent->proc_desc->parent_tf;
   bool succ = true;
 
   /* 1. Read the cpu context to local stack. */
@@ -142,11 +233,33 @@ static void __do_fork(void *aux) {
    * TODO:       from the fork() until this function successfully duplicates
    * TODO:       the resources of parent.*/
 
-  process_init();
+  if_.R.rax = 0;
 
+  pd->exit_status = parent->proc_desc->exit_status;
+  pd->is_terminated = parent->proc_desc->is_terminated;
+  pd->pid = current->tid;
+
+  lock_acquire(&filesys_lock);
+  current->running_file = file_duplicate(parent->running_file);
+  for (int i = 2; i < 128; i++) {
+    struct file *f = parent->proc_desc->file_desc[i];
+    if (f != NULL) {
+      pd->file_desc[i] = file_duplicate(f);
+    }
+  }
+  lock_release(&filesys_lock);
+
+  current->proc_desc = pd;
+
+  sema_up(&current->proc_desc->fork_sema);
   /* Finally, switch to the newly created process. */
-  if (succ) do_iret(&if_);
+  if (succ) {
+    do_iret(&if_);
+  }
 error:
+  current->proc_desc = pd;
+  current->proc_desc->exit_status = -1;
+  sema_up(&pd->fork_sema);
   thread_exit();
 }
 
@@ -188,7 +301,9 @@ void argument_stack(int argc, char **argv, struct intr_frame *_if) {
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int process_exec(void *f_name) {
-  char *file_name = f_name;
+  char *file_name = (char *)palloc_get_page(0);
+  if (file_name == NULL) return -1;
+  strlcpy(file_name, f_name, PGSIZE);
   bool success;
 
   /* We cannot use the intr_frame in the thread structure.
@@ -202,22 +317,25 @@ int process_exec(void *f_name) {
   /* We first kill the current context */
   process_cleanup();
 
-  /* Project 2 : argument passing */
-  char *token, *save_ptr;
-  char *argv[64];
-  int argc = 0;
+  struct thread *curr = thread_current();
 
-  for (token = strtok_r(file_name, " ", &save_ptr); token != NULL;
-       token = strtok_r(NULL, " ", &save_ptr)) {
-    argv[argc] = token;
-    argc++;
+  // if (filesys_lock.holder == curr) {
+  //   lock_release(&filesys_lock);
+  // }
+
+  if (curr->running_file != NULL) {
+    lock_acquire(&filesys_lock);
+    file_allow_write(curr->running_file);
+    file_close(curr->running_file);
+    curr->running_file = NULL;
+    lock_release(&filesys_lock);
   }
 
-  /* And then load the binary */
-  success = load(argv[0], &_if);
+  /* Project 2 : argument passing */
 
-  /* Set arguments in user stack */
-  argument_stack(argc, argv, &_if);
+  /* And then load the binary */
+  success = load(file_name, &_if);
+
   // hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
   /* Project 2 : argument passing */
 
@@ -239,15 +357,28 @@ int process_exec(void *f_name) {
  *
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
-int process_wait(tid_t child_tid UNUSED) {
+int process_wait(tid_t child_tid) {
   /* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
    * XXX:       to add infinite loop here before
    * XXX:       implementing the process_wait. */
   /* Project 2 : argument passing */
-  while (1) {
+  struct thread *curr = thread_current();
+
+  struct process_desc *child_desc = find_child_desc(child_tid);
+  if (child_desc == NULL) {
+    return -1;
   }
+
+  list_remove(&child_desc->child_elem);
+
+  if (!child_desc->is_terminated) {
+    sema_down(&child_desc->wait_sema);
+  }
+
+  int child_exit_status = child_desc->exit_status;
+  palloc_free_page(child_desc);
   /* Project 2 : argument passing */
-  return -1;
+  return child_exit_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
@@ -257,7 +388,34 @@ void process_exit(void) {
    * TODO: Implement process termination message (see
    * TODO: project2/process_termination.html).
    * TODO: We recommend you to implement process resource cleanup here. */
+  if (filesys_lock.holder == curr) {
+    lock_release(&filesys_lock);
+  }
 
+  if (curr->running_file != NULL) {
+    lock_acquire(&filesys_lock);
+    file_allow_write(curr->running_file);
+    file_close(curr->running_file);
+    curr->running_file = NULL;
+    lock_release(&filesys_lock);
+  }
+
+  struct process_desc *proc_desc = curr->proc_desc;
+  if (proc_desc != NULL) {
+    lock_acquire(&filesys_lock);
+    for (int i = 2; i < 128; i++) {
+      struct file *f = proc_desc->file_desc[i];
+      if (f != NULL) {
+        file_close(f);
+        proc_desc->file_desc[i] = NULL;
+      }
+    }
+    lock_release(&filesys_lock);
+    proc_desc->is_terminated = true;
+
+    sema_up(&curr->proc_desc->wait_sema);
+    printf("%s: exit(%d)\n", curr->name, curr->proc_desc->exit_status);
+  }
   process_cleanup();
 }
 
@@ -360,7 +518,7 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
  * Returns true if successful, false otherwise. */
-static bool load(const char *file_name, struct intr_frame *if_) {
+static bool load(const char *cmd_line, struct intr_frame *if_) {
   struct thread *t = thread_current();
   struct ELF ehdr;
   struct file *file = NULL;
@@ -368,15 +526,26 @@ static bool load(const char *file_name, struct intr_frame *if_) {
   bool success = false;
   int i;
 
+  char *token, *save_ptr;
+  char *argv[64];
+  int argc = 0;
+
+  for (token = strtok_r(cmd_line, " ", &save_ptr); token != NULL;
+       token = strtok_r(NULL, " ", &save_ptr)) {
+    argv[argc] = token;
+    argc++;
+  }
+
+  lock_acquire(&filesys_lock);
   /* Allocate and activate page directory. */
   t->pml4 = pml4_create();
   if (t->pml4 == NULL) goto done;
   process_activate(thread_current());
 
   /* Open executable file. */
-  file = filesys_open(file_name);
+  file = filesys_open(argv[0]);
   if (file == NULL) {
-    printf("load: %s: open failed\n", file_name);
+    printf("load: %s: open failed\n", argv[0]);
     goto done;
   }
 
@@ -386,7 +555,7 @@ static bool load(const char *file_name, struct intr_frame *if_) {
       ehdr.e_machine != 0x3E  // amd64
       || ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Phdr) ||
       ehdr.e_phnum > 1024) {
-    printf("load: %s: error loading executable\n", file_name);
+    printf("load: %s: error loading executable\n", argv[0]);
     goto done;
   }
 
@@ -449,11 +618,20 @@ static bool load(const char *file_name, struct intr_frame *if_) {
   /* TODO: Your code goes here.
    * TODO: Implement argument passing (see project2/argument_passing.html). */
 
+  file_deny_write(file);
+  t->running_file = file;
   success = true;
+  lock_release(&filesys_lock);
+
+  /* Set arguments in user stack */
+  argument_stack(argc, argv, if_);
+
+  return success;
 
 done:
   /* We arrive here whether the load is successful or not. */
   file_close(file);
+  lock_release(&filesys_lock);
   return success;
 }
 
@@ -654,3 +832,21 @@ static bool setup_stack(struct intr_frame *if_) {
   return success;
 }
 #endif /* VM */
+
+struct process_desc *find_child_desc(tid_t tid) {
+  struct thread *curr = thread_current();
+
+  struct process_desc *child_pd = NULL;
+  for (struct list_elem *e = list_begin(&curr->child_list);
+       e != list_end(&curr->child_list); e = list_next(e)) {
+    struct process_desc *pd = list_entry(e, struct process_desc, child_elem);
+    if (pd->pid == tid) {
+      child_pd = pd;
+      break;
+    }
+  }
+  return child_pd;
+}
+
+void filesys_lock_acquire() { lock_acquire(&filesys_lock); }
+void filesys_lock_release() { lock_release(&filesys_lock); }

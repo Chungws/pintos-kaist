@@ -37,6 +37,17 @@ typedef int tid_t;
 #define NICE_MAX 20
 /* Project 1 : mlfqs */
 
+struct process_desc {
+  tid_t pid;
+  int exit_status;
+  bool is_terminated;
+  struct semaphore wait_sema;
+  struct semaphore fork_sema;
+  struct intr_frame parent_tf;
+  struct file *file_desc[128];
+  struct list_elem child_elem;
+};
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -122,9 +133,12 @@ struct thread {
   struct list_elem elem; /* List element. */
 
 #ifdef USERPROG
+#endif
+  struct list child_list;
+  struct process_desc *proc_desc;
+  struct file *running_file;
   /* Owned by userprog/process.c. */
   uint64_t *pml4; /* Page map level 4 */
-#endif
 #ifdef VM
   /* Table for whole virtual memory owned by thread. */
   struct supplemental_page_table spt;
@@ -191,5 +205,7 @@ void thread_recalculate_recent_cpu_to_all_threads(void);
 /* Project 1 : priority */
 
 void do_iret(struct intr_frame *tf);
+
+struct thread *thread_find_tid(tid_t tid);
 
 #endif /* threads/thread.h */

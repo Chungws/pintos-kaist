@@ -9,5 +9,7 @@ int process_exec(void *f_name);
 int process_wait(tid_t);
 void process_exit(void);
 void process_activate(struct thread *next);
+void filesys_lock_acquire();
+void filesys_lock_release();
 
 #endif /* userprog/process.h */

@@ -739,6 +739,11 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     t->priority = priority;
   }
   /* Project 1 : mlfqs */
+#ifdef USERPROG
+  list_init(&t->child_list);
+  t->running_file = NULL;
+  t->proc_desc = NULL;
+#endif
   t->magic = THREAD_MAGIC;
 }
 
@@ -966,3 +971,23 @@ static struct thread *next_thread_to_run_multi_ready_queues(void) {
   return idle_thread;
 }
 /* Project 1 : mlfqs */
+
+struct thread *thread_find_tid(tid_t tid) {
+  struct list_elem *e;
+  struct thread *t;
+
+  for (e = list_begin(&ready_list); e != list_end(&ready_list);
+       e = list_next(e)) {
+    t = list_entry(e, struct thread, elem);
+    if (t->tid == tid) {
+      return t;
+    }
+  }
+  for (e = list_begin(&sleep_list); e != list_end(&sleep_list);
+       e = list_next(e)) {
+    t = list_entry(e, struct thread, elem);
+    if (t->tid == tid) {
+      return t;
+    }
+  }
+}
