@@ -24,23 +24,42 @@
 #include "vm/vm.h"
 #endif
 
-static void process_cleanup(void);
-static bool load(const char *cmd_line, struct intr_frame *if_);
-static void initd(void *f_name);
-static void __do_fork(void *);
-struct process_desc *find_child_desc(tid_t tid);
-
 static struct lock filesys_lock;
 
 struct initd_args {
   char *file_name;
-  struct proc_desc *pd;
+  struct process_desc *pd;
 };
 
 struct fork_args {
   struct thread *parent;
-  struct proc_desc *pd;
+  struct process_desc *pd;
 };
+
+struct file_desc {
+  int fd;
+  struct file *file;
+  struct hash_elem hash_elem;
+};
+
+static void process_cleanup(void);
+static bool load(const char *cmd_line, struct intr_frame *if_);
+static void initd(void *f_name);
+static void __do_fork(void *);
+void argument_stack(int argc, char **argv, struct intr_frame *_if);
+struct process_desc *find_child_desc(tid_t tid);
+void filesys_lock_acquire(void);
+void filesys_lock_release(void);
+struct process_desc *proc_desc_create(void);
+struct process_desc *proc_desc_create_initd(void);
+struct file_desc *file_desc_create(int fd, struct file *f);
+void file_desc_destroy(struct file_desc *desc);
+uint64_t file_desc_table_hash_func(const struct hash_elem *e, void *aux UNUSED);
+bool file_desc_table_hash_less_func(const struct hash_elem *a,
+                                    const struct hash_elem *b,
+                                    void *aux UNUSED);
+void file_desc_table_hash_destructor(struct hash_elem *e, void *aux UNUSED);
+struct file_desc *file_desc_table_find(struct hash *h, int fd);
 
 /* General process initializer for initd and other process. */
 static void process_init(void) {
@@ -68,40 +87,24 @@ tid_t process_create_initd(const char *cmd_line) {
   char *file_name, *save_ptr;
   file_name = strtok_r(cmd_line, " ", &save_ptr);
 
-  struct process_desc *pd;
-  pd = palloc_get_page(0);
+  struct process_desc *pd = proc_desc_create_initd();
   if (pd == NULL) return TID_ERROR;
-  sema_init(&pd->wait_sema, 0);
-  sema_init(&pd->fork_sema, 0);
-  for (int i = 0; i < 128; i++) {
-    pd->file_desc[i] = NULL;
-  }
-  pd->exit_status = -1;
-  pd->is_terminated = false;
 
-  struct initd_args args;
-  args.file_name = fn_copy;
-  args.pd = pd;
+  struct initd_args args = {fn_copy, pd};
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(file_name, PRI_DEFAULT, initd, &args);
-  sema_down(&pd->fork_sema);
 
   /* Project 2 : argument passing */
   if (tid == TID_ERROR) {
     palloc_free_page(fn_copy);
     palloc_free_page(pd);
-  } else {
-    struct thread *cur = thread_current();
-    struct thread *t = thread_find_tid(tid);
-    if (t == NULL) {
-      palloc_free_page(fn_copy);
-      palloc_free_page(pd);
-      return TID_ERROR;
-    }
-    pd->pid = tid;
-    list_push_back(&cur->child_list, &pd->child_elem);
+    return tid;
   }
+  sema_down(&pd->fork_sema);
+  struct thread *cur = thread_current();
+  pd->pid = tid;
+  list_push_back(&cur->child_list, &pd->child_elem);
 
   return tid;
 }
@@ -113,7 +116,7 @@ static void initd(void *_initd_args) {
 #endif
 
   struct initd_args *args = (struct initd_args *)_initd_args;
-  struct proc_desc *pd = args->pd;
+  struct process_desc *pd = args->pd;
   struct thread *curr = thread_current();
 
   process_init();
@@ -130,21 +133,14 @@ tid_t process_fork(const char *name, struct intr_frame *if_) {
   struct thread *cur = thread_current();
   memcpy(&cur->proc_desc->parent_tf, if_, sizeof(struct intr_frame));
 
-  struct process_desc *pd;
-  pd = palloc_get_page(0);
+  struct process_desc *pd = proc_desc_create();
   if (pd == NULL) return TID_ERROR;
-  sema_init(&pd->wait_sema, 0);
-  sema_init(&pd->fork_sema, 0);
-  for (int i = 0; i < 128; i++) {
-    pd->file_desc[i] = NULL;
-  }
 
   struct fork_args args = {thread_current(), pd};
 
   /* Clone current thread to new thread.*/
   tid_t tid = thread_create(name, PRI_DEFAULT, __do_fork, &args);
   if (tid == TID_ERROR) {
-    palloc_free_page(pd);
     return tid;
   }
   sema_down(&pd->fork_sema);
@@ -237,15 +233,51 @@ static void __do_fork(void *aux) {
 
   pd->exit_status = parent->proc_desc->exit_status;
   pd->is_terminated = parent->proc_desc->is_terminated;
+  pd->is_parent_terminated = parent->proc_desc->is_parent_terminated;
   pd->pid = current->tid;
+  pd->next_fd = parent->proc_desc->next_fd;
+  pd->stdin_count = parent->proc_desc->stdin_count;
+  pd->stdout_count = parent->proc_desc->stdout_count;
 
   lock_acquire(&filesys_lock);
   current->running_file = file_duplicate(parent->running_file);
-  for (int i = 2; i < 128; i++) {
-    struct file *f = parent->proc_desc->file_desc[i];
-    if (f != NULL) {
-      pd->file_desc[i] = file_duplicate(f);
+
+  struct hash_iterator i;
+  hash_first(&i, &parent->proc_desc->file_desc_table);
+
+  while (hash_next(&i)) {
+    struct file_desc *parent_f_desc =
+        hash_entry(hash_cur(&i), struct file_desc, hash_elem);
+    struct file *parent_file = parent_f_desc->file;
+    int parent_fd = parent_f_desc->fd;
+    ASSERT(parent_file != NULL);
+
+    struct file_desc *new_f_desc = file_desc_create(parent_fd, NULL);
+    if (new_f_desc == NULL) {
+      goto error;
     }
+
+    if (parent_file == STDIN_FD || parent_file == STDOUT_FD) {
+      new_f_desc->file = parent_file;
+    } else {
+      bool found = false;
+      struct hash_iterator j;
+      hash_first(&j, &pd->file_desc_table);
+      while (hash_next(&j)) {
+        struct file_desc *before_f_desc =
+            hash_entry(hash_cur(&j), struct file_desc, hash_elem);
+        if (before_f_desc->file == parent_file) {
+          found = true;
+          new_f_desc->file = parent_file;
+          file_increase_dup_count(parent_file);
+          break;
+        }
+      }
+      if (!found) {
+        new_f_desc->file = file_duplicate(parent_file);
+      }
+    }
+    hash_insert(&pd->file_desc_table, &new_f_desc->hash_elem);
   }
   lock_release(&filesys_lock);
 
@@ -362,8 +394,6 @@ int process_wait(tid_t child_tid) {
    * XXX:       to add infinite loop here before
    * XXX:       implementing the process_wait. */
   /* Project 2 : argument passing */
-  struct thread *curr = thread_current();
-
   struct process_desc *child_desc = find_child_desc(child_tid);
   if (child_desc == NULL) {
     return -1;
@@ -377,6 +407,7 @@ int process_wait(tid_t child_tid) {
 
   int child_exit_status = child_desc->exit_status;
   palloc_free_page(child_desc);
+
   /* Project 2 : argument passing */
   return child_exit_status;
 }
@@ -400,21 +431,36 @@ void process_exit(void) {
     lock_release(&filesys_lock);
   }
 
+  struct list_elem *e = list_begin(&curr->child_list);
+  struct process_desc *pd;
+
+  while (e != list_end(&curr->child_list)) {
+    pd = list_entry(e, struct process_desc, child_elem);
+    e = list_remove(e);
+    if (pd->is_terminated) {
+      palloc_free_page(pd);
+    } else {
+      pd->is_parent_terminated = true;
+    }
+  }
+
   struct process_desc *proc_desc = curr->proc_desc;
   if (proc_desc != NULL) {
     lock_acquire(&filesys_lock);
-    for (int i = 2; i < 128; i++) {
-      struct file *f = proc_desc->file_desc[i];
-      if (f != NULL) {
-        file_close(f);
-        proc_desc->file_desc[i] = NULL;
-      }
-    }
+    hash_destroy(&proc_desc->file_desc_table, &file_desc_table_hash_destructor);
     lock_release(&filesys_lock);
     proc_desc->is_terminated = true;
 
-    sema_up(&curr->proc_desc->wait_sema);
-    printf("%s: exit(%d)\n", curr->name, curr->proc_desc->exit_status);
+    printf("%s: exit(%d)\n", curr->name, proc_desc->exit_status);
+
+    if (proc_desc->is_parent_terminated) {
+      palloc_free_page(proc_desc);
+      curr->proc_desc = NULL;
+    } else {
+      if (!list_empty(&proc_desc->wait_sema.waiters)) {
+        sema_up(&proc_desc->wait_sema);
+      }
+    }
   }
   process_cleanup();
 }
@@ -848,5 +894,131 @@ struct process_desc *find_child_desc(tid_t tid) {
   return child_pd;
 }
 
-void filesys_lock_acquire() { lock_acquire(&filesys_lock); }
-void filesys_lock_release() { lock_release(&filesys_lock); }
+/* filesys_lock related functions. */
+void filesys_lock_acquire(void) { lock_acquire(&filesys_lock); }
+
+void filesys_lock_release(void) { lock_release(&filesys_lock); }
+
+/* process_desc related functions. */
+struct process_desc *proc_desc_create(void) {
+  struct process_desc *pd;
+  pd = palloc_get_page(0);
+  if (pd == NULL) return NULL;
+
+  sema_init(&pd->wait_sema, 0);
+  sema_init(&pd->fork_sema, 0);
+  hash_init(&pd->file_desc_table, &file_desc_table_hash_func,
+            &file_desc_table_hash_less_func, NULL);
+
+  pd->exit_status = -1;
+  pd->is_terminated = false;
+  pd->is_parent_terminated = false;
+
+  return pd;
+}
+
+struct process_desc *proc_desc_create_initd(void) {
+  struct process_desc *pd = proc_desc_create();
+
+  struct file_desc *stdin_fd = file_desc_create(0, STDIN_FD);
+  if (stdin_fd == NULL) {
+    palloc_free_page(pd);
+    return NULL;
+  }
+  hash_insert(&pd->file_desc_table, &stdin_fd->hash_elem);
+  pd->stdin_count = 1;
+
+  struct file_desc *stdout_fd = file_desc_create(1, STDOUT_FD);
+  if (stdout_fd == NULL) {
+    palloc_free_page(stdin_fd);
+    palloc_free_page(pd);
+    return NULL;
+  }
+  hash_insert(&pd->file_desc_table, &stdout_fd->hash_elem);
+  pd->stdout_count = 1;
+
+  pd->next_fd = 2;
+  return pd;
+}
+
+/* file_desc related functions. */
+struct file_desc *file_desc_create(int fd, struct file *f) {
+  struct file_desc *new_fd = palloc_get_page(0);
+  if (new_fd == NULL) return NULL;
+
+  new_fd->fd = fd;
+  new_fd->file = f;
+
+  return new_fd;
+}
+
+void file_desc_destroy(struct file_desc *desc) {
+  ASSERT(desc != NULL);
+  ASSERT(filesys_lock.holder == thread_current());
+  if (desc->file != STDIN_FD && desc->file != STDOUT_FD) {
+    file_close(desc->file);
+  }
+  palloc_free_page(desc);
+}
+
+/* file_desc_table (hash) related functions. */
+uint64_t file_desc_table_hash_func(const struct hash_elem *e,
+                                   void *aux UNUSED) {
+  struct file_desc *descriptor = hash_entry(e, struct file_desc, hash_elem);
+  return descriptor->fd;
+}
+
+bool file_desc_table_hash_less_func(const struct hash_elem *a,
+                                    const struct hash_elem *b,
+                                    void *aux UNUSED) {
+  struct file_desc *desc_a = hash_entry(a, struct file_desc, hash_elem);
+  struct file_desc *desc_b = hash_entry(b, struct file_desc, hash_elem);
+
+  return desc_a->fd < desc_b->fd;
+}
+
+void file_desc_table_hash_destructor(struct hash_elem *e, void *aux UNUSED) {
+  struct file_desc *desc = hash_entry(e, struct file_desc, hash_elem);
+  file_desc_destroy(desc);
+}
+
+struct file_desc *file_desc_table_find(struct hash *h, int fd) {
+  struct file_desc desc;
+  desc.fd = fd;
+
+  struct hash_elem *e = hash_find(h, &desc.hash_elem);
+  if (e == NULL) return NULL;
+
+  struct file_desc *exist_file_desc =
+      hash_entry(e, struct file_desc, hash_elem);
+
+  return exist_file_desc;
+}
+
+struct file *file_desc_table_find_file(struct hash *h, int fd) {
+  struct file_desc *desc = file_desc_table_find(h, fd);
+  if (desc == NULL) return NULL;
+
+  return desc->file;
+}
+
+bool file_desc_table_insert(struct hash *h, struct file_desc *desc) {
+  struct hash_elem *e = hash_insert(h, &desc->hash_elem);
+  // same fd file_desc is exist
+  if (e != NULL) {
+    return false;
+  }
+  return true;
+}
+
+void file_desc_table_delete(struct hash *h, int fd) {
+  struct file_desc *find_desc = file_desc_table_find(h, fd);
+  if (find_desc == NULL) {
+    return;
+  }
+
+  struct hash_elem *e = hash_delete(h, &find_desc->hash_elem);
+  if (e != NULL) {
+    file_desc_table_hash_destructor(e, NULL);
+  }
+}
