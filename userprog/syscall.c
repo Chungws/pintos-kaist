@@ -1,5 +1,6 @@
 #include "userprog/syscall.h"
 
+#include <hash.h>
 #include <stdio.h>
 #include <syscall-nr.h>
 
@@ -32,7 +33,8 @@ int sys_write(int fd, const void *buffer, unsigned size);
 void sys_seek(int fd, unsigned position);
 unsigned sys_tell(int fd);
 void sys_close(int fd);
-void validate_address(uint64_t addr);
+int sys_dup2(int oldfd, int newfd);
+void validate_address(void *addr);
 
 /* System call.
  *
@@ -64,7 +66,6 @@ void syscall_handler(struct intr_frame *f) {
   // TODO: Your implementation goes here.
 
   int syscall_number = f->R.rax;
-  // printf("system call! : %d\n", syscall_number);
   uint64_t arg1 = f->R.rdi;
   uint64_t arg2 = f->R.rsi;
   uint64_t arg3 = f->R.rdx;
@@ -117,13 +118,13 @@ void syscall_handler(struct intr_frame *f) {
       sys_close((int)arg1);
       break;
     case SYS_DUP2:
-      // sys_dup2();
+      f->R.rax = (uint64_t)sys_dup2((int)arg1, (int)arg2);
       break;
     default:
       printf("Not implemented system call\n");
+      sys_exit(-1);
       break;
   }
-  // thread_exit();
 }
 
 void sys_halt(void) { power_off(); }
@@ -135,12 +136,12 @@ void sys_exit(int status) {
 }
 
 pid_t sys_fork(const char *thread_name, struct intr_frame *_if) {
-  validate_address((uint64_t)thread_name);
+  validate_address((void *)thread_name);
   return process_fork(thread_name, _if);
 }
 
 int sys_exec(const char *cmd_line) {
-  validate_address((uint64_t)cmd_line);
+  validate_address((void *)cmd_line);
   if (process_exec((void *)cmd_line) == -1) {
     sys_exit(-1);
   }
@@ -150,7 +151,7 @@ int sys_exec(const char *cmd_line) {
 int sys_wait(pid_t pid) { return process_wait((tid_t)pid); }
 
 bool sys_create(const char *file, unsigned initial_size) {
-  validate_address((uint64_t)file);
+  validate_address((void *)file);
   filesys_lock_acquire();
   bool result = filesys_create(file, initial_size);
   filesys_lock_release();
@@ -158,7 +159,7 @@ bool sys_create(const char *file, unsigned initial_size) {
 }
 
 bool sys_remove(const char *file) {
-  validate_address((uint64_t)file);
+  validate_address((void *)file);
   filesys_lock_acquire();
   bool result = filesys_remove(file);
   filesys_lock_release();
@@ -166,7 +167,7 @@ bool sys_remove(const char *file) {
 }
 
 int sys_open(const char *file) {
-  validate_address((uint64_t)file);
+  validate_address((void *)file);
   filesys_lock_acquire();
   struct file *f = filesys_open(file);
   if (f == NULL) {
@@ -175,29 +176,29 @@ int sys_open(const char *file) {
   }
 
   struct thread *cur = thread_current();
-  for (int i = 2; i < 128; i++) {
-    if (cur->proc_desc->file_desc[i] == NULL) {
-      cur->proc_desc->file_desc[i] = f;
-      filesys_lock_release();
-      return i;
-    }
+  int new_fd = cur->proc_desc->next_fd;
+  struct file_desc *fd = file_desc_create(new_fd, f);
+  if (fd != NULL &&
+      file_desc_table_insert(&cur->proc_desc->file_desc_table, fd)) {
+    filesys_lock_release();
+    cur->proc_desc->next_fd++;
+    return new_fd;
   }
 
-  file_close(f);
+  if (fd != NULL) {
+    file_desc_destroy(fd);
+  }
   filesys_lock_release();
   return -1;
 }
 
 int sys_filesize(int fd) {
-  if (fd < 2) {
-    return 0;
-  }
-
   struct thread *cur = thread_current();
 
   filesys_lock_acquire();
-  struct file *f = cur->proc_desc->file_desc[fd];
-  if (f == NULL) {
+  struct file *f =
+      file_desc_table_find_file(&cur->proc_desc->file_desc_table, fd);
+  if (f == NULL || f == STDIN_FD || f == STDOUT_FD) {
     filesys_lock_release();
     return 0;
   }
@@ -208,10 +209,21 @@ int sys_filesize(int fd) {
 }
 
 int sys_read(int fd, void *buffer, unsigned size) {
-  validate_address((uint64_t)buffer);
-  if (fd == 0) {
+  validate_address((void *)buffer);
+  validate_address((void *)(buffer + size));
+  struct thread *cur = thread_current();
+
+  filesys_lock_acquire();
+  struct process_desc *pd = cur->proc_desc;
+  struct file *f =
+      file_desc_table_find_file(&cur->proc_desc->file_desc_table, fd);
+  int result = 0;
+
+  if (f == STDIN_FD) {
+    if (pd->stdin_count < 1) {
+      NOT_REACHED();
+    }
     uint8_t *buf = buffer;
-    unsigned result = 0;
     for (unsigned i = 0; i < size; i++) {
       *buf = input_getc();
       buf++;
@@ -220,32 +232,32 @@ int sys_read(int fd, void *buffer, unsigned size) {
         break;
       }
     }
-    return result;
-  } else if (fd == 1) {
-    return -1;
+  } else if (f == NULL || f == STDOUT_FD) {
+    result = -1;
   } else {
-    struct thread *cur = thread_current();
-
-    filesys_lock_acquire();
-    struct file *f = cur->proc_desc->file_desc[fd];
-    if (f == NULL) {
-      filesys_lock_release();
-      return -1;
-    }
-    int result = file_read(f, buffer, size);
-    filesys_lock_release();
-    return result;
+    result = file_read(f, buffer, size);
   }
+
+  filesys_lock_release();
+  return result;
 }
 
 int sys_write(int fd, const void *buffer, unsigned size) {
-  validate_address((uint64_t)buffer);
+  validate_address((void *)buffer);
+  validate_address((void *)(buffer + size));
+  struct thread *cur = thread_current();
 
-  if (fd == 0) {
-    return -1;
-  } else if (fd == 1) {
+  filesys_lock_acquire();
+  struct process_desc *pd = cur->proc_desc;
+  struct file *f =
+      file_desc_table_find_file(&cur->proc_desc->file_desc_table, fd);
+  int result = 0;
+
+  if (f == STDOUT_FD) {
+    if (pd->stdout_count < 1) {
+      NOT_REACHED();
+    }
     const uint8_t *buf = buffer;
-    unsigned result = 0;
     for (unsigned i = 0; i < size; i++) {
       putchar(*buf);
       buf++;
@@ -254,33 +266,22 @@ int sys_write(int fd, const void *buffer, unsigned size) {
         break;
       }
     }
-    return result;
+  } else if (f == NULL || f == STDIN_FD) {
+    result = -1;
   } else {
-    struct thread *cur = thread_current();
-
-    filesys_lock_acquire();
-    struct file *f = cur->proc_desc->file_desc[fd];
-    if (f == NULL) {
-      filesys_lock_release();
-      return -1;
-    }
-    int result = file_write(f, buffer, size);
-    filesys_lock_release();
-
-    return result;
+    result = file_write(f, buffer, size);
   }
+  filesys_lock_release();
+  return result;
 }
 
 void sys_seek(int fd, unsigned position) {
-  if (fd < 2) {
-    return;
-  }
-
   struct thread *cur = thread_current();
 
   filesys_lock_acquire();
-  struct file *f = cur->proc_desc->file_desc[fd];
-  if (f == NULL) {
+  struct file *f =
+      file_desc_table_find_file(&cur->proc_desc->file_desc_table, fd);
+  if (f == NULL || f == STDIN_FD || f == STDOUT_FD) {
     filesys_lock_release();
     return;
   }
@@ -290,15 +291,12 @@ void sys_seek(int fd, unsigned position) {
 }
 
 unsigned sys_tell(int fd) {
-  if (fd < 2) {
-    return 0;
-  }
-
   struct thread *cur = thread_current();
 
   filesys_lock_acquire();
-  struct file *f = cur->proc_desc->file_desc[fd];
-  if (f == NULL) {
+  struct file *f =
+      file_desc_table_find_file(&cur->proc_desc->file_desc_table, fd);
+  if (f == NULL || f == STDIN_FD || f == STDOUT_FD) {
     filesys_lock_release();
     return 0;
   }
@@ -309,25 +307,76 @@ unsigned sys_tell(int fd) {
 }
 
 void sys_close(int fd) {
-  if (fd < 2) {
-    return;
-  }
-
   struct thread *cur = thread_current();
 
   filesys_lock_acquire();
-  struct file *f = cur->proc_desc->file_desc[fd];
+  struct process_desc *pd = cur->proc_desc;
+  struct file *f =
+      file_desc_table_find_file(&cur->proc_desc->file_desc_table, fd);
   if (f == NULL) {
     filesys_lock_release();
     return;
+  } else if (f == STDIN_FD) {
+    pd->stdin_count--;
+  } else if (f == STDOUT_FD) {
+    pd->stdout_count--;
   }
 
-  file_close(f);
-  cur->proc_desc->file_desc[fd] = NULL;
+  file_desc_table_delete(&cur->proc_desc->file_desc_table, fd);
   filesys_lock_release();
 }
 
-void validate_address(uint64_t addr) {
+int sys_dup2(int oldfd, int newfd) {
+  struct thread *cur = thread_current();
+  struct process_desc *pd = cur->proc_desc;
+
+  filesys_lock_acquire();
+  struct file *f_old = file_desc_table_find_file(&pd->file_desc_table, oldfd);
+  struct file *f_new = file_desc_table_find_file(&pd->file_desc_table, newfd);
+  if (f_old == NULL) {
+    filesys_lock_release();
+    return -1;
+  }
+
+  if (oldfd == newfd) {
+    filesys_lock_release();
+    return newfd;
+  }
+
+  struct file_desc *new_desc = file_desc_create(newfd, f_old);
+  if (new_desc == NULL) {
+    filesys_lock_release();
+    return -1;
+  }
+
+  if (f_old == STDIN_FD) {
+    pd->stdin_count++;
+  } else if (f_old == STDOUT_FD) {
+    pd->stdout_count++;
+  } else {
+    file_increase_dup_count(f_old);
+  }
+
+  if (f_new == STDIN_FD) {
+    pd->stdin_count--;
+  } else if (f_new == STDOUT_FD) {
+    pd->stdout_count--;
+  }
+
+  if (f_new != NULL) {
+    file_desc_table_delete(&pd->file_desc_table, newfd);
+  }
+
+  file_desc_table_insert(&pd->file_desc_table, new_desc);
+  if (newfd >= pd->next_fd) {
+    pd->next_fd = newfd + 1;
+  }
+
+  filesys_lock_release();
+  return newfd;
+}
+
+void validate_address(void *addr) {
   if (addr == NULL || !is_user_vaddr(addr)) {
     sys_exit(-1);
   }
