@@ -21,7 +21,7 @@
 #define PGMASK BITMASK(PGSHIFT, PGBITS) /* Page offset bits (0:12). */
 
 /* Offset within a page. */
-#define pg_ofs(va) ((uint64_t)(va)&PGMASK)
+#define pg_ofs(va) ((uint64_t)(va) & PGMASK)
 
 #define pg_no(va) ((uint64_t)(va) >> PGBITS)
 

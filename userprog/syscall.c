@@ -15,6 +15,9 @@
 #include "threads/thread.h"
 #include "userprog/gdt.h"
 #include "userprog/process.h"
+#ifdef VM
+#include "vm/vm.h"
+#endif
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
@@ -35,6 +38,9 @@ unsigned sys_tell(int fd);
 void sys_close(int fd);
 int sys_dup2(int oldfd, int newfd);
 void validate_address(void *addr);
+#ifdef VM
+void validate_buffer(void *addr, unsigned size, bool is_write);
+#endif
 
 /* System call.
  *
@@ -209,8 +215,12 @@ int sys_filesize(int fd) {
 }
 
 int sys_read(int fd, void *buffer, unsigned size) {
+#ifndef VM
   validate_address((void *)buffer);
   validate_address((void *)(buffer + size));
+#else
+  validate_buffer((void *)buffer, size, false);
+#endif
   struct thread *cur = thread_current();
 
   filesys_lock_acquire();
@@ -243,8 +253,12 @@ int sys_read(int fd, void *buffer, unsigned size) {
 }
 
 int sys_write(int fd, const void *buffer, unsigned size) {
+#ifndef VM
   validate_address((void *)buffer);
   validate_address((void *)(buffer + size));
+#else
+  validate_buffer((void *)buffer, size, true);
+#endif
   struct thread *cur = thread_current();
 
   filesys_lock_acquire();
@@ -380,4 +394,21 @@ void validate_address(void *addr) {
   if (addr == NULL || !is_user_vaddr(addr)) {
     sys_exit(-1);
   }
+#ifdef VM
+  spt_find_page(&thread_current()->spt, addr);
+}
+
+void validate_buffer(void *addr, unsigned size, bool is_write) {
+  for (int i = 0; i < size; i += PGSIZE) {
+    validate_address(addr + i);
+    struct page *pg = spt_find_page(&thread_current()->spt, addr);
+    if (pg == NULL) {
+      sys_exit(-1);
+    }
+
+    if (is_write && !pg->writable) {
+      sys_exit(-1);
+    }
+  }
+#endif
 }
