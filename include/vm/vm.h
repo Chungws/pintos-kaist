@@ -48,6 +48,7 @@ struct page {
   struct frame *frame; /* Back reference for frame */
 
   /* Your implementation */
+  struct thread *owner;
   struct hash_elem hash_elem;
   bool writable;
 
@@ -67,6 +68,7 @@ struct page {
 struct frame {
   void *kva;
   struct page *page;
+  struct list_elem elem;
 };
 
 /* The function table for page operations.
