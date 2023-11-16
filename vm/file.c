@@ -91,7 +91,6 @@ static void file_backed_destroy(struct page *page) {
   struct file_page *file_page = &page->file;
 
   uint64_t *pml4 = page->owner->pml4;
-  struct file_page *file_page = &page->file;
   struct file *file = file_page->file;
   const off_t ofs = file_page->ofs;
   const size_t page_read_bytes = file_page->page_read_bytes;
