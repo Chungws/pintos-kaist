@@ -10,6 +10,13 @@
 #include "threads/vaddr.h"
 #include "vm/inspect.h"
 
+struct frame_list {
+  struct list list;
+  struct lock lock;
+};
+
+static struct frame_list lru_list;
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void vm_init(void) {
@@ -21,6 +28,8 @@ void vm_init(void) {
   register_inspect_intr();
   /* DO NOT MODIFY UPPER LINES. */
   /* TODO: Your code goes here. */
+  list_init(&lru_list.list);
+  lock_init(&lru_list.lock);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -73,15 +82,16 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
     }
 
     uninit_new(pg, upage, init, type, aux, page_initializer);
+    pg->owner = thread_current();
     pg->writable = writable;
 
+    /* TODO: Insert the page into the spt. */
     if (!spt_insert_page(spt, pg)) {
-      free(pg);
+      vm_dealloc_page(pg);
       goto err;
     }
 
     return true;
-    /* TODO: Insert the page into the spt. */
   }
 err:
   return false;
@@ -129,14 +139,41 @@ static struct frame *vm_get_victim(void) {
   struct frame *victim = NULL;
   /* TODO: The policy for eviction is up to you. */
 
+  lock_acquire(&lru_list.lock);
+  if (!list_empty(&lru_list.list)) {
+    for (struct list_elem *e = list_begin(&lru_list.list);
+         e != list_end(&lru_list.list); e = list_next(e)) {
+      struct frame *fr = list_entry(e, struct frame, elem);
+      uint64_t *pml4 = fr->page->owner->pml4;
+
+      if (pml4_is_accessed(pml4, fr->page->va)) {
+        pml4_set_accessed(pml4, fr->page->va, false);
+      } else {
+        victim = fr;
+        break;
+      }
+    }
+    if (victim == NULL) {
+      victim = list_entry(list_begin(&lru_list.list), struct frame, elem);
+    }
+    list_remove(&victim->elem);
+    list_push_back(&lru_list.list, &victim->elem);
+  }
+  lock_release(&lru_list.lock);
+
   return victim;
 }
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
 static struct frame *vm_evict_frame(void) {
-  struct frame *victim UNUSED = vm_get_victim();
+  struct frame *victim = vm_get_victim();
   /* TODO: swap out the victim and return the evicted frame. */
+  struct page *page = victim->page;
+  if (page != NULL && swap_out(page)) {
+    victim->page = NULL;
+    return victim;
+  }
 
   return NULL;
 }
@@ -152,8 +189,11 @@ static struct frame *vm_get_frame(void) {
   if (kva != NULL) {
     frame = (struct frame *)calloc(1, sizeof(struct frame));
     frame->kva = kva;
+    lock_acquire(&lru_list.lock);
+    list_push_back(&lru_list.list, &frame->elem);
+    lock_release(&lru_list.lock);
   } else {
-    PANIC("Implement if palloc_get_page failed (swap out)");
+    frame = vm_evict_frame();
   }
 
   ASSERT(frame != NULL);
@@ -171,15 +211,6 @@ static bool vm_handle_wp(struct page *page UNUSED) {}
 bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
                          bool write, bool not_present) {
   struct supplemental_page_table *spt = &thread_current()->spt;
-  // struct hash_iterator i;
-  // hash_first(&i, &spt->table);
-  // bool result = false;
-  // int count = 0;
-  // while (hash_next(&i)) {
-  //   struct page *pg = hash_entry(hash_cur(&i), struct page, hash_elem);
-  //   printf("%d : %p type(%d)\n", count, pg->va, pg->operations->type);
-  //   count++;
-  // }
   struct page *page = NULL;
   /* TODO: Validate the fault */
   /* TODO: Your code goes here */
@@ -192,7 +223,10 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
     return false;
   }
 
-  return vm_do_claim_page(page);
+  if (!vm_do_claim_page(page)) {
+    return false;
+  }
+  return true;
 }
 
 /* Free the page.
@@ -224,7 +258,8 @@ static bool vm_do_claim_page(struct page *page) {
   page->frame = frame;
 
   /* TODO: Insert page table entry to map page's VA to frame's PA. */
-  if (!pml4_set_page(thread_current()->pml4, page->va, frame->kva,
+  if (pml4_get_page(thread_current()->pml4, page->va) != NULL ||
+      !pml4_set_page(thread_current()->pml4, page->va, frame->kva,
                      page->writable)) {
     palloc_free_page(frame->kva);
     free(frame);
@@ -284,8 +319,21 @@ bool handle_copy_anon_page(struct page *src) {
   if (dst == NULL) {
     return false;
   }
+
   if (!vm_do_claim_page(dst)) {
     return false;
+  }
+
+  dst->anon.swap_table_index = -1;
+
+  uint64_t *pml4_src = src->owner->pml4;
+  uint64_t *pml4_dst = dst->owner->pml4;
+  if (pml4_is_dirty(pml4_src, src->va)) {
+    pml4_set_dirty(pml4_dst, dst->va, true);
+  }
+
+  if (pml4_is_accessed(pml4_src, src->va)) {
+    pml4_set_accessed(pml4_dst, dst->va, true);
   }
 
   ASSERT(dst->frame != NULL);
@@ -293,7 +341,43 @@ bool handle_copy_anon_page(struct page *src) {
   return true;
 }
 
-bool handle_copy_file_page(struct page *src) {}
+bool handle_copy_file_page(struct page *src) {
+  if (!vm_alloc_page(src->operations->type, src->va, src->writable)) {
+    return false;
+  }
+  struct page *dst = spt_find_page(&thread_current()->spt, src->va);
+  if (dst == NULL) {
+    return false;
+  }
+
+  if (!vm_do_claim_page(dst)) {
+    return false;
+  }
+
+  struct file_page *src_file_page = &src->file;
+  struct file_page *dst_file_page = &dst->file;
+
+  dst_file_page->file = file_reopen(src_file_page->file);
+  dst_file_page->ofs = src_file_page->ofs;
+  dst_file_page->page_read_bytes = src_file_page->page_read_bytes;
+  if (dst_file_page->file == NULL) {
+    return false;
+  }
+
+  uint64_t *pml4_src = src->owner->pml4;
+  uint64_t *pml4_dst = dst->owner->pml4;
+  if (pml4_is_dirty(pml4_src, src->va)) {
+    pml4_set_dirty(pml4_dst, dst->va, true);
+  }
+
+  if (pml4_is_accessed(pml4_src, src->va)) {
+    pml4_set_accessed(pml4_dst, dst->va, true);
+  }
+
+  ASSERT(dst->frame != NULL);
+  memcpy(dst->frame->kva, src->frame->kva, PGSIZE);
+  return true;
+}
 
 /* Copy supplemental page table from src to dst */
 bool supplemental_page_table_copy(struct supplemental_page_table *dst,
@@ -319,9 +403,9 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
         }
         break;
       case VM_FILE:
-        // if (!handle_copy_file_page(src_pg)) {
-        //   return false;
-        // }
+        if (!handle_copy_file_page(src_pg)) {
+          return false;
+        }
         break;
     }
   }
