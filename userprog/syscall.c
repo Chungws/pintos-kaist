@@ -43,7 +43,7 @@ void sys_munmap(void *addr);
 
 void validate_address(void *addr);
 #ifdef VM
-void validate_buffer(void *addr, unsigned size, bool is_write);
+void validate_buffer(void *addr, unsigned size, bool writes_to_buffer);
 #endif
 
 /* System call.
@@ -229,7 +229,7 @@ int sys_read(int fd, void *buffer, unsigned size) {
   validate_address((void *)buffer);
   validate_address((void *)(buffer + size));
 #else
-  validate_buffer((void *)buffer, size, false);
+  validate_buffer((void *)buffer, size, true);
 #endif
   struct thread *cur = thread_current();
 
@@ -267,7 +267,7 @@ int sys_write(int fd, const void *buffer, unsigned size) {
   validate_address((void *)buffer);
   validate_address((void *)(buffer + size));
 #else
-  validate_buffer((void *)buffer, size, true);
+  validate_buffer((void *)buffer, size, false);
 #endif
   struct thread *cur = thread_current();
 
@@ -433,7 +433,7 @@ void validate_address(void *addr) {
   spt_find_page(&thread_current()->spt, addr);
 }
 
-void validate_buffer(void *addr, unsigned size, bool is_write) {
+void validate_buffer(void *addr, unsigned size, bool writes_to_buffer) {
   for (int i = 0; i < size; i += PGSIZE) {
     validate_address(addr + i);
     struct page *pg = spt_find_page(&thread_current()->spt, addr);
@@ -441,7 +441,7 @@ void validate_buffer(void *addr, unsigned size, bool is_write) {
       sys_exit(-1);
     }
 
-    if (is_write && !pg->writable) {
+    if (writes_to_buffer && !pg->writable) {
       sys_exit(-1);
     }
   }
