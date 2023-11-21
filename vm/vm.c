@@ -333,6 +333,9 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 void supplemental_page_table_hash_destructor(struct hash_elem *e,
                                              void *aux UNUSED) {
   struct page *pg = hash_entry(e, struct page, hash_elem);
+  if (pg->operations->type == VM_FILE) {
+    do_munmap (pg->va);
+  }
   if (pg->frame != NULL) {
     pg->frame->page = NULL;
   }

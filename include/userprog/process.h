@@ -38,4 +38,6 @@ bool file_desc_table_insert(struct hash *h, struct file_desc *desc);
 void file_desc_table_delete(struct hash *h, int fd);
 struct file *file_desc_table_find_file(struct hash *h, int fd);
 
+bool lazy_load_segment(struct page *page, void *aux);
+
 #endif /* userprog/process.h */

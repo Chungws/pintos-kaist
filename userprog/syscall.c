@@ -37,6 +37,10 @@ void sys_seek(int fd, unsigned position);
 unsigned sys_tell(int fd);
 void sys_close(int fd);
 int sys_dup2(int oldfd, int newfd);
+
+void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void sys_munmap(void *addr);
+
 void validate_address(void *addr);
 #ifdef VM
 void validate_buffer(void *addr, unsigned size, bool is_write);
@@ -125,6 +129,12 @@ void syscall_handler(struct intr_frame *f) {
       break;
     case SYS_DUP2:
       f->R.rax = (uint64_t)sys_dup2((int)arg1, (int)arg2);
+      break;
+    case SYS_MMAP:
+      sys_mmap((void *)arg1, (size_t)arg2, (int)arg3, (int)arg4, (off_t)arg5);
+      break;
+    case SYS_MUNMAP:
+      sys_munmap((void *)arg1);
       break;
     default:
       printf("Not implemented system call\n");
@@ -388,6 +398,31 @@ int sys_dup2(int oldfd, int newfd) {
 
   filesys_lock_release();
   return newfd;
+}
+
+void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+  struct thread *cur = thread_current();
+  struct process_desc *pd = cur->proc_desc;
+
+  // validate_address(addr);
+
+  filesys_lock_acquire();
+  struct file *file = file_desc_table_find_file(&pd->file_desc_table, fd);
+  filesys_lock_release();
+
+  if (file == NULL || file == STDIN_FD || file == STDOUT_FD
+      || pg_round_down (addr) != addr  /* addr is not page-aligned */
+      || offset % PGSIZE != 0  /* file offset is not page-aligned */
+      || length == 0
+      || spt_find_page(&cur->spt, addr) != NULL
+  ) {
+    return NULL;
+  }
+  return do_mmap(addr, length, writable, file, offset);
+}
+
+void sys_munmap(void *addr) {
+  do_munmap(addr);
 }
 
 void validate_address(void *addr) {
