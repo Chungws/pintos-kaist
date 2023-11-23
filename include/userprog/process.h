@@ -22,6 +22,9 @@ struct process_desc {
   int stdin_count;
   int stdout_count;
   struct list_elem child_elem;
+#ifdef VM
+  struct hash mmap_table;
+#endif /* VM */
 };
 
 tid_t process_create_initd(const char *file_name);
@@ -35,8 +38,10 @@ void filesys_lock_release(void);
 struct file_desc *file_desc_create(int fd, struct file *f);
 void file_desc_destroy(struct file_desc *desc);
 bool file_desc_table_insert(struct hash *h, struct file_desc *desc);
-void file_desc_table_delete(struct hash *h, int fd);
 struct file *file_desc_table_find_file(struct hash *h, int fd);
+
+bool mmap_table_insert(struct hash *h, uint64_t addr);
+bool mmap_table_find_addr(struct hash *h, uint64_t addr);
 
 bool lazy_load_segment(struct page *page, void *aux);
 

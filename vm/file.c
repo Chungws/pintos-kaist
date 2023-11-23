@@ -121,16 +121,16 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    struct lazy_load_args *args = 
-      (struct lazy_load_args *)malloc(sizeof(struct lazy_load_args));
+    struct lazy_load_args *args =
+        (struct lazy_load_args *)malloc(sizeof(struct lazy_load_args));
     args->file = mapped_file;
     args->ofs = offset;
     args->page_read_bytes = page_read_bytes;
     args->page_zero_bytes = page_zero_bytes;
 
-    if(!vm_alloc_page_with_initializer (VM_FILE, addr, writable,
+    if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable,
                                         lazy_load_segment, (void *)args)) {
-      free (args);
+      free(args);
       return NULL;
     }
 
@@ -145,18 +145,21 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
 /* Do the munmap */
 void do_munmap(void *addr) {
   struct thread *cur = thread_current();
+  struct hash *mmap_table = &cur->proc_desc->mmap_table;
   while (true) {
     struct page *page = spt_find_page(&cur->spt, addr);
 
-    // TODO: check page is VM_FILE
-    if (page == NULL) {
+    if (page == NULL || page->operations->type != VM_FILE) {
+      return;
+    }
+    if (mmap_table && mmap_table_find_addr(mmap_table, addr)) {
       return;
     }
 
     struct lazy_load_args *args = (struct lazy_load_args *)page->uninit.aux;
 
     if (pml4_is_dirty(cur->pml4, page->va)) {
-      file_write_at (args->file, addr, args->page_read_bytes, args->ofs);
+      file_write_at(args->file, addr, args->page_read_bytes, args->ofs);
       pml4_set_dirty(cur->pml4, page->va, 0);
     }
 

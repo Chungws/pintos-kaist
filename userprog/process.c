@@ -42,6 +42,11 @@ struct file_desc {
   struct hash_elem hash_elem;
 };
 
+struct mmap_addr {
+  uint64_t addr;
+  struct hash_elem hash_elem;
+};
+
 static void process_cleanup(void);
 static bool load(const char *cmd_line, struct intr_frame *if_);
 static void initd(void *f_name);
@@ -60,6 +65,12 @@ bool file_desc_table_hash_less_func(const struct hash_elem *a,
                                     void *aux UNUSED);
 void file_desc_table_hash_destructor(struct hash_elem *e, void *aux UNUSED);
 struct file_desc *file_desc_table_find(struct hash *h, int fd);
+
+uint64_t mmap_table_hash_func(const struct hash_elem *e, void *aux UNUSED);
+bool mmap_table_hash_less_func(const struct hash_elem *a,
+                               const struct hash_elem *b, void *aux UNUSED);
+struct mmap_addr *mmap_table_find(struct hash *h, uint64_t addr);
+void mmap_table_hash_destructor(struct hash_elem *e, void *aux UNUSED);
 
 /* General process initializer for initd and other process. */
 static void process_init(void) {
@@ -448,6 +459,7 @@ void process_exit(void) {
   if (proc_desc != NULL) {
     lock_acquire(&filesys_lock);
     hash_destroy(&proc_desc->file_desc_table, &file_desc_table_hash_destructor);
+    hash_destroy(&proc_desc->mmap_table, NULL);
     lock_release(&filesys_lock);
     proc_desc->is_terminated = true;
 
@@ -939,7 +951,8 @@ struct process_desc *proc_desc_create(void) {
   sema_init(&pd->fork_sema, 0);
   hash_init(&pd->file_desc_table, &file_desc_table_hash_func,
             &file_desc_table_hash_less_func, NULL);
-
+  hash_init(&pd->mmap_table, &mmap_table_hash_func, &mmap_table_hash_less_func,
+            NULL);
   pd->exit_status = -1;
   pd->is_terminated = false;
   pd->is_parent_terminated = false;
@@ -1051,4 +1064,66 @@ void file_desc_table_delete(struct hash *h, int fd) {
   if (e != NULL) {
     file_desc_table_hash_destructor(e, NULL);
   }
+}
+
+/* mmap_table(hash) related functions. */
+uint64_t mmap_table_hash_func(const struct hash_elem *e, void *aux UNUSED) {
+  struct mmap_addr *descriptor = hash_entry(e, struct mmap_addr, hash_elem);
+  return descriptor->addr;
+}
+
+bool mmap_table_hash_less_func(const struct hash_elem *a,
+                               const struct hash_elem *b, void *aux UNUSED) {
+  struct mmap_addr *desc_a = hash_entry(a, struct mmap_addr, hash_elem);
+  struct mmap_addr *desc_b = hash_entry(b, struct mmap_addr, hash_elem);
+
+  return desc_a->addr < desc_b->addr;
+}
+
+struct mmap_addr *mmap_table_find(struct hash *h, uint64_t addr) {
+  struct mmap_addr map;
+  map.addr = addr;
+
+  struct hash_elem *e = hash_find(h, &map.hash_elem);
+  if (e == NULL) return NULL;
+
+  struct mmap_addr *exist_mmap_addr =
+      hash_entry(e, struct mmap_addr, hash_elem);
+
+  return exist_mmap_addr;
+}
+
+bool mmap_table_insert(struct hash *h, uint64_t addr) {
+  struct mmap_addr *map = palloc_get_page(0);
+  if (map == NULL) return false;
+
+  map->addr = addr;
+  struct hash_elem *e = hash_insert(h, &map->hash_elem);
+  return (e == NULL);
+}
+
+bool mmap_table_find_addr(struct hash *h, uint64_t addr) {
+  return mmap_table_find(h, addr) != NULL;
+}
+
+void mmap_table_delete(struct hash *h, uint64_t addr) {
+  struct mmap_addr *map = mmap_table_find(h, addr);
+  if (map == NULL) {
+    return;
+  }
+
+  struct hash_elem *e = hash_delete(h, &map->hash_elem);
+  if (e != NULL) {
+    mmap_table_hash_destructor(e, NULL);
+  }
+}
+
+void mmap_addr_destroy(struct mmap_addr *addr) {
+  ASSERT(addr != NULL);
+  palloc_free_page(addr);
+}
+
+void mmap_table_hash_destructor(struct hash_elem *e, void *aux UNUSED) {
+  struct mmap_addr *map = hash_entry(e, struct mmap_addr, hash_elem);
+  mmap_addr_destroy(map);
 }

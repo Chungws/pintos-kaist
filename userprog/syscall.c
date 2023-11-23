@@ -403,25 +403,34 @@ int sys_dup2(int oldfd, int newfd) {
 void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
   struct thread *cur = thread_current();
   struct process_desc *pd = cur->proc_desc;
-
-  // validate_address(addr);
+  char *ret;
 
   filesys_lock_acquire();
   struct file *file = file_desc_table_find_file(&pd->file_desc_table, fd);
   filesys_lock_release();
 
-  if (file == NULL || file == STDIN_FD || file == STDOUT_FD
-      || pg_round_down (addr) != addr  /* addr is not page-aligned */
-      || offset % PGSIZE != 0  /* file offset is not page-aligned */
-      || length == 0
-      || spt_find_page(&cur->spt, addr) != NULL
-  ) {
+  if (file == NULL || file == STDIN_FD || file == STDOUT_FD ||
+      pg_round_down(addr) != addr /* addr is not page-aligned */
+      || offset % PGSIZE != 0     /* file offset is not page-aligned */
+      || addr == NULL || length == 0 ||
+      spt_find_page(&cur->spt, addr) != NULL) {
     return NULL;
   }
-  return do_mmap(addr, length, writable, file, offset);
+
+  ret = do_mmap(addr, length, writable, file, offset);
+  if (ret != NULL) {
+    mmap_table_insert(&pd->mmap_table, (uint64_t)addr);
+  }
+  return ret;
 }
 
 void sys_munmap(void *addr) {
+  struct thread *cur = thread_current();
+  struct process_desc *pd = cur->proc_desc;
+  if (mmap_table_find(&pd->mmap_table, (uint64_t)addr) == NULL) {
+    return;
+  }
+  mmap_table_delete(&pd->mmap_table, (uint64_t)addr);
   do_munmap(addr);
 }
 
