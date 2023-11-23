@@ -7,6 +7,8 @@
 // clang-format on
 #include "filesys/file.h"
 #include "threads/mmu.h"
+#include "threads/vaddr.h"
+#include "userprog/process.h"
 
 static bool file_backed_swap_in(struct page *page, void *kva);
 static bool file_backed_swap_out(struct page *page);
@@ -105,7 +107,63 @@ static void file_backed_destroy(struct page *page) {
 
 /* Do the mmap */
 void *do_mmap(void *addr, size_t length, int writable, struct file *file,
-              off_t offset) {}
+              off_t offset) {
+  void *start_addr = addr;
+  struct file *mapped_file = file_reopen(file);
+
+  size_t read_bytes = file_length(file);
+  if (length <= read_bytes) {
+    read_bytes = length;
+  }
+  size_t zero_bytes = PGSIZE - read_bytes % PGSIZE;
+
+  while (read_bytes > 0 || zero_bytes > 0) {
+    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+    struct lazy_load_args *args =
+        (struct lazy_load_args *)malloc(sizeof(struct lazy_load_args));
+    args->file = mapped_file;
+    args->ofs = offset;
+    args->page_read_bytes = page_read_bytes;
+    args->page_zero_bytes = page_zero_bytes;
+
+    if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable,
+                                        lazy_load_segment, (void *)args)) {
+      free(args);
+      return NULL;
+    }
+
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    addr += PGSIZE;
+    offset += page_read_bytes;
+  }
+  return start_addr;
+}
 
 /* Do the munmap */
-void do_munmap(void *addr) {}
+void do_munmap(void *addr) {
+  struct thread *cur = thread_current();
+  struct hash *mmap_table = &cur->proc_desc->mmap_table;
+  while (true) {
+    struct page *page = spt_find_page(&cur->spt, addr);
+
+    if (page == NULL || page->operations->type != VM_FILE) {
+      return;
+    }
+    if (mmap_table && mmap_table_find_addr(mmap_table, addr)) {
+      return;
+    }
+
+    struct lazy_load_args *args = (struct lazy_load_args *)page->uninit.aux;
+
+    if (pml4_is_dirty(cur->pml4, page->va)) {
+      file_write_at(args->file, addr, args->page_read_bytes, args->ofs);
+      pml4_set_dirty(cur->pml4, page->va, 0);
+    }
+
+    pml4_clear_page(cur->pml4, page->va);
+    addr += PGSIZE;
+  }
+}
