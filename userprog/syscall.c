@@ -74,7 +74,9 @@ void syscall_init(void) {
 /* The main system call interface */
 void syscall_handler(struct intr_frame *f) {
   // TODO: Your implementation goes here.
-
+#ifdef VM
+  thread_current()->rsp_stack = f->rsp; 
+#endif
   int syscall_number = f->R.rax;
   uint64_t arg1 = f->R.rdi;
   uint64_t arg2 = f->R.rsi;

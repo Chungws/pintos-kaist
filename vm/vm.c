@@ -202,7 +202,12 @@ static struct frame *vm_get_frame(void) {
 }
 
 /* Growing the stack. */
-static void vm_stack_growth(void *addr UNUSED) {}
+static void vm_stack_growth(void *addr UNUSED) {
+  if (vm_alloc_page(VM_ANON | VM_MARKER_0, addr, 1)) {
+    vm_claim_page(addr);
+    thread_current()->stack_bottom -= PGSIZE;
+  }
+}
 
 /* Handle the fault on write_protected page */
 static bool vm_handle_wp(struct page *page UNUSED) {}
@@ -218,15 +223,23 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
     return false;
   }
 
-  page = spt_find_page(spt, addr);
-  if (page == NULL || (write && !page->writable)) {
+  void *rsp_stack =
+      is_kernel_vaddr(f->rsp) ? thread_current()->rsp_stack : f->rsp;
+  if (!vm_claim_page(addr)) {
+    if (rsp_stack - 8 <= addr && USER_STACK - 0x100000 <= addr &&
+        addr <= USER_STACK) {
+      vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+      return true;
+    }
     return false;
+  } else {
+    page = spt_find_page(spt, addr);
+    if (write && !page->writable) {
+      return false;
+    }
+    return true;
   }
-
-  if (!vm_do_claim_page(page)) {
-    return false;
-  }
-  return true;
+  return false;
 }
 
 /* Free the page.
