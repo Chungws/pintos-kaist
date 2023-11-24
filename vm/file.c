@@ -45,7 +45,7 @@ bool file_backed_initializer(struct page *page, enum vm_type type, void *kva) {
   file_page->ofs = ofs;
   file_page->page_read_bytes = page_read_bytes;
 
-  memset((void *)uninit_page, 0, sizeof(struct uninit_page));
+  // memset((void *)uninit_page, 0, sizeof(struct uninit_page));
   return true;
 }
 
