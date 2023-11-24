@@ -16,7 +16,7 @@ $(foreach prog,$(tests/filesys/buffer-cache_TESTS),		\
 # the last comma.
 $(foreach test,$(tests/filesys/buffer-cache_TESTS),$(eval $(test).output: FSDISK = tmp.dsk))
 
-GETTIMEOUT = 120
+GETTIMEOUT = 60
 
 PUTCMD2 = pintos -v -k -T 60 --fs-disk=tmp.dsk
 PUTCMD2 += $(foreach file,$(PUTFILES),-p $(file):$(notdir $(file)))

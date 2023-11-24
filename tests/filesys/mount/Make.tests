@@ -17,7 +17,7 @@ $(foreach prog,$(tests/filesys/mount_TESTS),		\
 $(foreach test,$(tests/filesys/mount_TESTS),$(eval $(test).output: FSDISK = tmp.dsk))
 $(foreach test,$(tests/filesys/mount_TESTS),$(eval $(test).output: EXDISK = mnt.dsk))
 
-GETTIMEOUT = 120
+GETTIMEOUT = 60
 
 PUTCMD2 = pintos -v -k -T 60 --fs-disk=tmp.dsk
 PUTCMD2 += $(foreach file,$(PUTFILES),-p $(file):$(notdir $(file)))
