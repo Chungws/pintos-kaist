@@ -71,11 +71,11 @@ pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/pt-write-code2:pt-write-code2 
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/pt-grow-stk-sc:pt-grow-stk-sc --swap-disk=4 -- -q -f run pt-grow-stk-sc
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/page-linear:page-linear --swap-disk=4 -- -q -f run page-linear
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/page-parallel:page-parallel -p tests/vm/child-linear:child-linear --swap-disk=4 -- -q -f run page-parallel
-pintos --gdb -v -k 0 -m 20 --fs-disk=10 -p tests/vm/page-merge-seq:page-merge-seq -p tests/vm/child-sort:child-sort --swap-disk=4 -- -q -f run page-merge-seq
-pintos --gdb -v -k 0 -m 20 --fs-disk=10 -p tests/vm/page-merge-par:page-merge-par -p tests/vm/child-sort:child-sort --swap-disk=10 -- -q -f run page-merge-par
+pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/page-merge-seq:page-merge-seq -p tests/vm/child-sort:child-sort --swap-disk=4 -- -q -f run page-merge-seq
+pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/page-merge-par:page-merge-par -p tests/vm/child-sort:child-sort --swap-disk=10 -- -q -f run page-merge-par
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/page-merge-stk:page-merge-stk -p tests/vm/child-qsort:child-qsort --swap-disk=10 -- -q -f run page-merge-stk
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/page-merge-mm:page-merge-mm -p tests/vm/child-qsort-mm:child-qsort-mm --swap-disk=10 -- -q -f run page-merge-mm
-pintos --gdb -v -k 0 -m 20 --fs-disk=10 -p tests/vm/page-shuffle:page-shuffle --swap-disk=4 -- -q -f run page-shuffle
+pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/page-shuffle:page-shuffle --swap-disk=4 -- -q -f run page-shuffle
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-read:mmap-read -p ../../tests/vm/sample.txt:sample.txt --swap-disk=4 -- -q -f run mmap-read
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-close:mmap-close -p ../../tests/vm/sample.txt:sample.txt --swap-disk=4 -- -q -f run mmap-close
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-unmap:mmap-unmap -p ../../tests/vm/sample.txt:sample.txt --swap-disk=4 -- -q -f run mmap-unmap
@@ -84,7 +84,7 @@ pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-twice:mmap-twice -p ../..
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-write:mmap-write --swap-disk=4 -- -q -f run mmap-write
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-ro:mmap-ro -p ../../tests/vm/large.txt:large.txt --swap-disk=4 -- -q -f run mmap-ro
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-exit:mmap-exit -p tests/vm/child-mm-wrt:child-mm-wrt --swap-disk=4 -- -q -f run mmap-exit
-pintos --gdb -v -k 0 -m 20 --fs-disk=10 -p tests/vm/mmap-shuffle:mmap-shuffle --swap-disk=4 -- -q -f run mmap-shuffle
+pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-shuffle:mmap-shuffle --swap-disk=4 -- -q -f run mmap-shuffle
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-bad-fd:mmap-bad-fd --swap-disk=4 -- -q -f run mmap-bad-fd
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-clean:mmap-clean -p ../../tests/vm/sample.txt:sample.txt --swap-disk=4 -- -q -f run mmap-clean
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-inherit:mmap-inherit -p ../../tests/vm/sample.txt:sample.txt -p tests/vm/child-inherit:child-inherit --swap-disk=4 -- -q -f run mmap-inherit
@@ -101,12 +101,12 @@ pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-zero-len:mmap-zero-len --
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-off:mmap-off -p ../../tests/vm/large.txt:large.txt --swap-disk=4 -- -q -f run mmap-off
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-bad-off:mmap-bad-off -p ../../tests/vm/large.txt:large.txt --swap-disk=4 -- -q -f run mmap-bad-off
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/mmap-kernel:mmap-kernel -p ../../tests/vm/sample.txt:sample.txt --swap-disk=4 -- -q -f run mmap-kernel
-pintos --gdb -v -k 0 -m 20 --fs-disk=10 -p tests/vm/lazy-file:lazy-file -p ../../tests/vm/sample.txt:sample.txt -p ../../tests/vm/small.txt:small.txt --swap-disk=4 -- -q -f run lazy-file
+pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/lazy-file:lazy-file -p ../../tests/vm/sample.txt:sample.txt -p ../../tests/vm/small.txt:small.txt --swap-disk=4 -- -q -f run lazy-file
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/vm/lazy-anon:lazy-anon --swap-disk=4 -- -q -f run lazy-anon
 pintos --gdb -v -k -m 8 --fs-disk=10 -p tests/vm/swap-file:swap-file -p ../../tests/vm/large.txt:large.txt --swap-disk=10 -- -q -f run swap-file
 pintos --gdb -v -k -m 10 --fs-disk=10 -p tests/vm/swap-anon:swap-anon --swap-disk=30 -- -q -f run swap-anon
 pintos --gdb -v -k -m 10 --fs-disk=10 -p tests/vm/swap-iter:swap-iter -p ../../tests/vm/large.txt:large.txt --swap-disk=50 -- -q -f run swap-iter
-pintos --gdb -v -k 0 -m 40 --fs-disk=10 -p tests/vm/swap-fork:swap-fork -p tests/vm/child-swap:child-swap --swap-disk=200 -- -q -f run swap-fork
+pintos --gdb -v -k -m 40 --fs-disk=10 -p tests/vm/swap-fork:swap-fork -p tests/vm/child-swap:child-swap --swap-disk=200 -- -q -f run swap-fork
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/filesys/base/lg-create:lg-create --swap-disk=4 -- -q -f run lg-create
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/filesys/base/lg-full:lg-full --swap-disk=4 -- -q -f run lg-full
 pintos --gdb -v -k -m 20 --fs-disk=10 -p tests/filesys/base/lg-random:lg-random --swap-disk=4 -- -q -f run lg-random

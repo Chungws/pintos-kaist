@@ -157,7 +157,7 @@ void do_munmap(void *addr) {
       return;
     }
     struct file_page *f_page = &page->file;
-    struct file* f = f_page->file;
+    struct file *f = f_page->file;
     off_t ofs = f_page->ofs;
     size_t page_read_bytes = f_page->page_read_bytes;
 
