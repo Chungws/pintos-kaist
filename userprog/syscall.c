@@ -415,7 +415,8 @@ void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
   if (file == NULL || file == STDIN_FD || file == STDOUT_FD ||
       pg_round_down(addr) != addr /* addr is not page-aligned */
       || offset % PGSIZE != 0     /* file offset is not page-aligned */
-      || addr == NULL || length == 0 ||
+      || addr == NULL || length == 0 || !is_user_vaddr(addr) ||
+      !is_user_vaddr(addr + length - 1) ||
       spt_find_page(&cur->spt, addr) != NULL) {
     return NULL;
   }
