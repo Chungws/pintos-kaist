@@ -232,14 +232,13 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
       return true;
     }
     return false;
-  } else {
-    page = spt_find_page(spt, addr);
-    if (write && !page->writable) {
-      return false;
-    }
-    return true;
   }
-  return false;
+
+  page = spt_find_page(spt, addr);
+  if (write && !page->writable) {
+    return false;
+  }
+  return true;
 }
 
 /* Free the page.
@@ -431,7 +430,7 @@ void supplemental_page_table_hash_destructor(struct hash_elem *e,
                                              void *aux UNUSED) {
   struct page *pg = hash_entry(e, struct page, hash_elem);
   if (pg->operations->type == VM_FILE) {
-    do_munmap (pg->va);
+    do_munmap(pg->va);
   }
   if (pg->frame != NULL) {
     pg->frame->page = NULL;

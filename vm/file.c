@@ -40,12 +40,13 @@ bool file_backed_initializer(struct page *page, enum vm_type type, void *kva) {
   off_t ofs = args->ofs;
   size_t page_read_bytes = args->page_read_bytes;
 
+  memset((void *)uninit_page, 0, sizeof(struct uninit_page));
+
   struct file_page *file_page = &page->file;
   file_page->file = f;
   file_page->ofs = ofs;
   file_page->page_read_bytes = page_read_bytes;
 
-  // memset((void *)uninit_page, 0, sizeof(struct uninit_page));
   return true;
 }
 
@@ -122,7 +123,7 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     struct lazy_load_args *args =
-        (struct lazy_load_args *)malloc(sizeof(struct lazy_load_args));
+        (struct lazy_load_args *)calloc(1, sizeof(struct lazy_load_args));
     args->file = mapped_file;
     args->ofs = offset;
     args->page_read_bytes = page_read_bytes;
@@ -155,11 +156,13 @@ void do_munmap(void *addr) {
     if (mmap_table && mmap_table_find_addr(mmap_table, addr)) {
       return;
     }
-
-    struct lazy_load_args *args = (struct lazy_load_args *)page->uninit.aux;
+    struct file_page *f_page = &page->file;
+    struct file* f = f_page->file;
+    off_t ofs = f_page->ofs;
+    size_t page_read_bytes = f_page->page_read_bytes;
 
     if (pml4_is_dirty(cur->pml4, page->va)) {
-      file_write_at(args->file, addr, args->page_read_bytes, args->ofs);
+      file_write_at(f, addr, page_read_bytes, ofs);
       pml4_set_dirty(cur->pml4, page->va, 0);
     }
 
