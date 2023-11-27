@@ -89,7 +89,7 @@ static bool anon_swap_out(struct page *page) {
 
   for (int i = 0; i < SECTOR_PER_PAGE; i++) {
     disk_sector_t sector = idx * SECTOR_PER_PAGE + i;
-    void *memory = page->va + DISK_SECTOR_SIZE * i;
+    void *memory = page->frame->kva + DISK_SECTOR_SIZE * i;
     disk_write(swap_disk, sector, memory);
   }
   bitmap_set(swap_table.table, idx, true);

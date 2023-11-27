@@ -42,6 +42,7 @@ struct file *file_desc_table_find_file(struct hash *h, int fd);
 
 bool mmap_table_insert(struct hash *h, uint64_t addr);
 bool mmap_table_find_addr(struct hash *h, uint64_t addr);
+void mmap_table_delete(struct hash *h, uint64_t addr);
 
 bool lazy_load_segment(struct page *page, void *aux);
 
