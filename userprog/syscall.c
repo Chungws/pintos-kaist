@@ -415,10 +415,18 @@ void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
   if (file == NULL || file == STDIN_FD || file == STDOUT_FD ||
       pg_round_down(addr) != addr /* addr is not page-aligned */
       || offset % PGSIZE != 0     /* file offset is not page-aligned */
-      || addr == NULL || length == 0 || !is_user_vaddr(addr) ||
-      !is_user_vaddr(addr + length - 1) ||
-      spt_find_page(&cur->spt, addr) != NULL) {
+      || addr == NULL || length == 0) {
     return NULL;
+  }
+
+  for (int i = 0; i < length; i += PGSIZE) {
+    if (!is_user_vaddr(addr + i)) {
+      return NULL;
+    }
+    struct page *pg = spt_find_page(&thread_current()->spt, addr + i);
+    if (pg != NULL) {
+      return NULL;
+    }
   }
 
   ret = do_mmap(addr, length, writable, file, offset);

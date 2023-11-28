@@ -62,7 +62,7 @@ static bool file_backed_swap_in(struct page *page, void *kva) {
   const size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
   file_seek(file, ofs);
-  if (page_zero_bytes != (size_t)file_read(file, kva, page_read_bytes)) {
+  if (page_read_bytes != (size_t)file_read(file, kva, page_read_bytes)) {
     return false;
   }
   memset(kva + page_read_bytes, 0, page_zero_bytes);

@@ -171,6 +171,7 @@ static struct frame *vm_evict_frame(void) {
   /* TODO: swap out the victim and return the evicted frame. */
   struct page *page = victim->page;
   if (page != NULL && swap_out(page)) {
+    victim->page->frame = NULL;
     victim->page = NULL;
     return victim;
   }
@@ -202,7 +203,7 @@ static struct frame *vm_get_frame(void) {
 }
 
 /* Growing the stack. */
-static void vm_stack_growth(void *addr UNUSED) {
+static void vm_stack_growth(void *addr) {
   if (vm_alloc_page(VM_ANON | VM_MARKER_0, addr, 1)) {
     vm_claim_page(addr);
     thread_current()->stack_bottom -= PGSIZE;
@@ -223,9 +224,9 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
     return false;
   }
 
-  void *rsp_stack =
-      is_kernel_vaddr(f->rsp) ? thread_current()->rsp_stack : f->rsp;
   if (!vm_claim_page(addr)) {
+    void *rsp_stack =
+        is_kernel_vaddr(f->rsp) ? thread_current()->rsp_stack : f->rsp;
     if (rsp_stack - 8 <= addr && USER_STACK - 0x100000 <= addr &&
         addr <= USER_STACK) {
       vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
