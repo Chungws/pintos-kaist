@@ -73,7 +73,6 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
 
     switch (VM_TYPE(type)) {
       case VM_ANON:
-      case VM_ANON | VM_MARKER_0:  // case for stack
         page_initializer = &anon_initializer;
         break;
       case VM_FILE:
@@ -204,7 +203,7 @@ static struct frame *vm_get_frame(void) {
 
 /* Growing the stack. */
 static void vm_stack_growth(void *addr) {
-  if (vm_alloc_page(VM_ANON | VM_MARKER_0, addr, 1)) {
+  if (vm_alloc_page(VM_ANON | VM_STACK, addr, 1)) {
     vm_claim_page(addr);
     thread_current()->stack_bottom -= PGSIZE;
   }
@@ -403,14 +402,13 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
     struct page *src_pg = hash_entry(hash_cur(&i), struct page, hash_elem);
     enum vm_type type = src_pg->operations->type;
 
-    switch (type) {
+    switch (VM_TYPE(type)) {
       case VM_UNINIT:
         if (!handle_copy_uninit_page(src_pg)) {
           return false;
         }
         break;
       case VM_ANON:
-      case VM_ANON | VM_MARKER_0:
         if (!handle_copy_anon_page(src_pg)) {
           return false;
         }
