@@ -51,6 +51,7 @@ bool anon_initializer(struct page *page, enum vm_type type, void *kva) {
 
   struct anon_page *anon_page = &page->anon;
   anon_page->swap_table_index = -1;
+  anon_page->type = type;
   return true;
 }
 

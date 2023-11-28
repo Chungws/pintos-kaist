@@ -46,6 +46,7 @@ bool file_backed_initializer(struct page *page, enum vm_type type, void *kva) {
   file_page->file = f;
   file_page->ofs = ofs;
   file_page->page_read_bytes = page_read_bytes;
+  file_page->type = type;
 
   return true;
 }
@@ -117,6 +118,7 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
     read_bytes = length;
   }
   size_t zero_bytes = PGSIZE - read_bytes % PGSIZE;
+  bool first_page = true;
 
   while (read_bytes > 0 || zero_bytes > 0) {
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
@@ -124,13 +126,17 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
 
     struct lazy_load_args *args =
         (struct lazy_load_args *)calloc(1, sizeof(struct lazy_load_args));
+    enum vm_type type = VM_FILE;
+    if (first_page) {
+      type |= VM_MMAP_ADDR;
+    }
     args->file = mapped_file;
     args->ofs = offset;
     args->page_read_bytes = page_read_bytes;
     args->page_zero_bytes = page_zero_bytes;
 
-    if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable,
-                                        lazy_load_segment, (void *)args)) {
+    if (!vm_alloc_page_with_initializer(type, addr, writable, lazy_load_segment,
+                                        (void *)args)) {
       free(args);
       return NULL;
     }
@@ -139,6 +145,7 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
     zero_bytes -= page_zero_bytes;
     addr += PGSIZE;
     offset += page_read_bytes;
+    first_page = false;
   }
   return start_addr;
 }
@@ -146,14 +153,18 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
 /* Do the munmap */
 void do_munmap(void *addr) {
   struct thread *cur = thread_current();
-  struct hash *mmap_table = &cur->proc_desc->mmap_table;
+  int mmap_count = 0;
   while (true) {
     struct page *page = spt_find_page(&cur->spt, addr);
 
-    if (page == NULL || page->operations->type != VM_FILE) {
+    if (page == NULL || VM_TYPE(page->operations->type) != VM_FILE) {
       return;
     }
-    if (mmap_table && mmap_table_find_addr(mmap_table, addr)) {
+    if (page->file.type & VM_MMAP_ADDR) {
+      ++mmap_count;
+    }
+    if (mmap_count == 2) {
+      // Found another mmapped address, should stop here.
       return;
     }
     struct file_page *f_page = &page->file;

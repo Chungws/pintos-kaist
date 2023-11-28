@@ -406,7 +406,6 @@ int sys_dup2(int oldfd, int newfd) {
 void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
   struct thread *cur = thread_current();
   struct process_desc *pd = cur->proc_desc;
-  char *ret;
 
   filesys_lock_acquire();
   struct file *file = file_desc_table_find_file(&pd->file_desc_table, fd);
@@ -429,20 +428,18 @@ void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
     }
   }
 
-  ret = do_mmap(addr, length, writable, file, offset);
-  if (ret != NULL) {
-    mmap_table_insert(&pd->mmap_table, (uint64_t)addr);
-  }
-  return ret;
+  return do_mmap(addr, length, writable, file, offset);
 }
 
 void sys_munmap(void *addr) {
   struct thread *cur = thread_current();
-  struct process_desc *pd = cur->proc_desc;
-  if (mmap_table_find(&pd->mmap_table, (uint64_t)addr) == NULL) {
+  struct page *pg = spt_find_page(&cur->spt, addr);
+  if (pg == NULL || VM_TYPE(pg->operations->type) != VM_FILE) {
     return;
   }
-  mmap_table_delete(&pd->mmap_table, (uint64_t)addr);
+  if (!(pg->file.type & VM_MMAP_ADDR)) {
+    return;
+  }
   do_munmap(addr);
 }
 

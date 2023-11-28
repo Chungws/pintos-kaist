@@ -6,6 +6,7 @@ enum vm_type;
 
 struct anon_page {
   int swap_table_index;
+  enum vm_type type;
 };
 
 void vm_anon_init(void);
