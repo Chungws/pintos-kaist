@@ -83,6 +83,7 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
     uninit_new(pg, upage, init, type, aux, page_initializer);
     pg->owner = thread_current();
     pg->writable = writable;
+    pg->do_not_swap_out = false;
 
     /* TODO: Insert the page into the spt. */
     if (!spt_insert_page(spt, pg)) {
@@ -144,6 +145,10 @@ static struct frame *vm_get_victim(void) {
          e != list_end(&lru_list.list); e = list_next(e)) {
       struct frame *fr = list_entry(e, struct frame, elem);
       uint64_t *pml4 = fr->page->owner->pml4;
+
+      if (fr->page->do_not_swap_out) {
+        continue;
+      }
 
       if (pml4_is_accessed(pml4, fr->page->va)) {
         pml4_set_accessed(pml4, fr->page->va, false);
@@ -369,7 +374,11 @@ bool handle_copy_file_page(struct page *src) {
   struct file_page *src_file_page = &src->file;
   struct file_page *dst_file_page = &dst->file;
 
-  dst_file_page->file = file_reopen(src_file_page->file);
+  if (dst_file_page->type & VM_MMAP_ADDR) {
+    dst_file_page->file = file_reopen(src_file_page->file);
+  }
+
+  dst_file_page->start_addr = src_file_page->start_addr;
   dst_file_page->ofs = src_file_page->ofs;
   dst_file_page->page_read_bytes = src_file_page->page_read_bytes;
   if (dst_file_page->file == NULL) {
@@ -420,6 +429,21 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
         break;
     }
   }
+
+  hash_first(&i, &dst->table);
+  while (hash_next(&i)) {
+    struct page *dst_pg = hash_entry(hash_cur(&i), struct page, hash_elem);
+    enum vm_type type = dst_pg->operations->type;
+
+    if (VM_TYPE(type) != VM_FILE) {
+      continue;
+    }
+
+    if (!(dst_pg->file.type & VM_MMAP_ADDR)) {
+      struct page *start_addr_pg = spt_find_page(dst, dst_pg->file.start_addr);
+      dst_pg->file.file = start_addr_pg->file.file;
+    }
+  }
   result = true;
 
   return result;
@@ -445,4 +469,26 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt) {
     return;
   }
   hash_destroy(&spt->table, &supplemental_page_table_hash_destructor);
+}
+
+bool pin_page(void *addr) {
+  struct supplemental_page_table *spt = &thread_current()->spt;
+  struct page *pg = spt_find_page(spt, addr);
+  if (pg == NULL) {
+    return false;
+  }
+
+  pg->do_not_swap_out = true;
+  return true;
+}
+
+bool unpin_page(void *addr) {
+  struct supplemental_page_table *spt = &thread_current()->spt;
+  struct page *pg = spt_find_page(spt, addr);
+  if (pg == NULL) {
+    return false;
+  }
+
+  pg->do_not_swap_out = false;
+  return true;
 }

@@ -51,6 +51,7 @@ struct page {
   struct thread *owner;
   struct hash_elem hash_elem;
   bool writable;
+  bool do_not_swap_out;
 
   /* Per-type data are binded into the union.
    * Each function automatically detects the current union */
@@ -116,11 +117,15 @@ void vm_dealloc_page(struct page *page);
 bool vm_claim_page(void *va);
 enum vm_type page_get_type(struct page *page);
 
+bool pin_page(void *addr);
+bool unpin_page(void *addr);
+
 struct lazy_load_args {
   struct file *file;
   off_t ofs;
   size_t page_read_bytes;
   size_t page_zero_bytes;
+  void *start_addr;
 };
 
 #endif /* VM_VM_H */

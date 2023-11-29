@@ -582,12 +582,12 @@ static bool load(const char *cmd_line, struct intr_frame *if_) {
     argc++;
   }
 
-  lock_acquire(&filesys_lock);
   /* Allocate and activate page directory. */
   t->pml4 = pml4_create();
   if (t->pml4 == NULL) goto done;
   process_activate(thread_current());
 
+  lock_acquire(&filesys_lock);
   /* Open executable file. */
   file = filesys_open(argv[0]);
   if (file == NULL) {

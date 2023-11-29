@@ -134,6 +134,7 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
     args->ofs = offset;
     args->page_read_bytes = page_read_bytes;
     args->page_zero_bytes = page_zero_bytes;
+    args->start_addr = start_addr;
 
     if (!vm_alloc_page_with_initializer(type, addr, writable, lazy_load_segment,
                                         (void *)args)) {
@@ -154,21 +155,22 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
 void do_munmap(void *addr) {
   struct thread *cur = thread_current();
   int mmap_count = 0;
+  struct file *f = NULL;
   while (true) {
     struct page *page = spt_find_page(&cur->spt, addr);
 
     if (page == NULL || VM_TYPE(page->operations->type) != VM_FILE) {
-      return;
+      break;
     }
     if (page->file.type & VM_MMAP_ADDR) {
       ++mmap_count;
     }
     if (mmap_count == 2) {
       // Found another mmapped address, should stop here.
-      return;
+      break;
     }
     struct file_page *f_page = &page->file;
-    struct file *f = f_page->file;
+    f = f_page->file;
     off_t ofs = f_page->ofs;
     size_t page_read_bytes = f_page->page_read_bytes;
 
@@ -179,5 +181,8 @@ void do_munmap(void *addr) {
 
     pml4_clear_page(cur->pml4, page->va);
     addr += PGSIZE;
+  }
+  if (f != NULL) {
+    file_close(f);
   }
 }

@@ -11,6 +11,7 @@ struct file_page {
   off_t ofs;
   size_t page_read_bytes;
   enum vm_type type;
+  void *start_addr;
 };
 
 void vm_file_init(void);
