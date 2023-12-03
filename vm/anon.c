@@ -105,15 +105,14 @@ static bool anon_swap_out(struct page *page) {
 static void anon_destroy(struct page *page) {
   struct anon_page *anon_page = &page->anon;
   int idx = anon_page->swap_table_index;
-  if (idx < 0) {
-    return;
+  if (idx >= 0) {
+    lock_acquire(&swap_table.lock);
+    if (bitmap_test(swap_table.table, idx) == true) {
+      bitmap_set(swap_table.table, idx, false);
+    }
+    lock_release(&swap_table.lock);
   }
-
-  lock_acquire(&swap_table.lock);
-  if (bitmap_test(swap_table.table, idx) == true) {
-    bitmap_set(swap_table.table, idx, false);
-  }
-  lock_release(&swap_table.lock);
 
   memset((void *)anon_page, 0, sizeof(struct anon_page));
+  pml4_clear_page(&page->owner->pml4, page->va);
 }

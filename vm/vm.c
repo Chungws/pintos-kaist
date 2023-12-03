@@ -137,6 +137,8 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page) {
 /* Get the struct frame, that will be evicted. */
 static struct frame *vm_get_victim(void) {
   struct frame *victim = NULL;
+  struct frame *victim_candidate = NULL;
+  bool found_candidate = false;
   /* TODO: The policy for eviction is up to you. */
 
   lock_acquire(&lru_list.lock);
@@ -149,6 +151,10 @@ static struct frame *vm_get_victim(void) {
       if (fr->page->do_not_swap_out) {
         continue;
       }
+      if (!found_candidate) {
+        victim_candidate = fr;
+        found_candidate = true;
+      }
 
       if (pml4_is_accessed(pml4, fr->page->va)) {
         pml4_set_accessed(pml4, fr->page->va, false);
@@ -158,7 +164,8 @@ static struct frame *vm_get_victim(void) {
       }
     }
     if (victim == NULL) {
-      victim = list_entry(list_begin(&lru_list.list), struct frame, elem);
+      ASSERT(victim_candidate != NULL);
+      victim = victim_candidate;
     }
     list_remove(&victim->elem);
     list_push_back(&lru_list.list, &victim->elem);
@@ -342,6 +349,8 @@ bool handle_copy_anon_page(struct page *src) {
   }
 
   dst->anon.swap_table_index = -1;
+  dst->anon.type = src->anon.type;
+  dst->do_not_swap_out = src->do_not_swap_out;
 
   uint64_t *pml4_src = src->owner->pml4;
   uint64_t *pml4_dst = dst->owner->pml4;
@@ -371,6 +380,8 @@ bool handle_copy_file_page(struct page *src) {
     return false;
   }
 
+  dst->do_not_swap_out = src->do_not_swap_out;
+
   struct file_page *src_file_page = &src->file;
   struct file_page *dst_file_page = &dst->file;
 
@@ -381,6 +392,7 @@ bool handle_copy_file_page(struct page *src) {
   dst_file_page->start_addr = src_file_page->start_addr;
   dst_file_page->ofs = src_file_page->ofs;
   dst_file_page->page_read_bytes = src_file_page->page_read_bytes;
+  dst_file_page->type = src_file_page->type;
   if (dst_file_page->file == NULL) {
     return false;
   }
@@ -452,7 +464,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 void supplemental_page_table_hash_destructor(struct hash_elem *e,
                                              void *aux UNUSED) {
   struct page *pg = hash_entry(e, struct page, hash_elem);
-  if (pg->operations->type == VM_FILE) {
+  if (pg->operations->type == VM_FILE && (pg->file.type & VM_MMAP_ADDR)) {
     do_munmap(pg->va);
   }
   if (pg->frame != NULL) {

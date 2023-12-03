@@ -94,16 +94,15 @@ static bool file_backed_swap_out(struct page *page) {
 static void file_backed_destroy(struct page *page) {
   struct file_page *file_page = &page->file;
 
-  uint64_t *pml4 = page->owner->pml4;
-  struct file *file = file_page->file;
-  const off_t ofs = file_page->ofs;
-  const size_t page_read_bytes = file_page->page_read_bytes;
+  // if (file_page->type & VM_MMAP_ADDR) {
+  //   file_close(file_page->file);
+  // }
 
-  if (pml4_is_dirty(pml4, page->va)) {
-    file_seek(file, ofs);
-    file_write(file, page->va, page_read_bytes);
-    pml4_set_dirty(pml4, page->va, false);
-  }
+  // if (pml4_is_dirty(pml4, page->va)) {
+  //   file_seek(file, ofs);
+  //   file_write(file, page->va, page_read_bytes);
+  //   pml4_set_dirty(pml4, page->va, false);
+  // }
   memset((void *)file_page, 0, sizeof(struct file_page));
 }
 
@@ -178,6 +177,7 @@ void do_munmap(void *addr) {
       file_write_at(f, addr, page_read_bytes, ofs);
       pml4_set_dirty(cur->pml4, page->va, 0);
     }
+    f_page->file = NULL;
 
     pml4_clear_page(cur->pml4, page->va);
     addr += PGSIZE;

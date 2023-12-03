@@ -60,10 +60,16 @@ static bool uninit_initialize(struct page *page, void *kva) {
  * exit, which are never referenced during the execution.
  * PAGE will be freed by the caller. */
 static void uninit_destroy(struct page *page) {
-  struct uninit_page *uninit UNUSED = &page->uninit;
+  struct uninit_page *uninit = &page->uninit;
   /* TODO: Fill this function.
    * TODO: If you don't have anything to do, just return. */
-  if (uninit->aux != NULL) {
+  struct lazy_load_args *args = (struct lazy_load_args *)uninit->aux;
+  if (args != NULL) {
+    if (args->file != NULL) {
+      file_close(args->file);
+    }
     free(uninit->aux);
   }
+  memset((void *)uninit, 0, sizeof(struct uninit_page));
+  pml4_clear_page(&page->owner->pml4, page->va);
 }
