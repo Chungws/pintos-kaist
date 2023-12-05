@@ -39,6 +39,7 @@ bool file_backed_initializer(struct page *page, enum vm_type type, void *kva) {
   struct file *f = args->file;
   off_t ofs = args->ofs;
   size_t page_read_bytes = args->page_read_bytes;
+  void *start_addr = args->start_addr;
 
   memset((void *)uninit_page, 0, sizeof(struct uninit_page));
 
@@ -47,6 +48,7 @@ bool file_backed_initializer(struct page *page, enum vm_type type, void *kva) {
   file_page->ofs = ofs;
   file_page->page_read_bytes = page_read_bytes;
   file_page->type = type;
+  file_page->start_addr = start_addr;
 
   return true;
 }
@@ -94,16 +96,18 @@ static bool file_backed_swap_out(struct page *page) {
 static void file_backed_destroy(struct page *page) {
   struct file_page *file_page = &page->file;
 
-  // if (file_page->type & VM_MMAP_ADDR) {
-  //   file_close(file_page->file);
-  // }
+  struct thread *cur = thread_current();
 
-  // if (pml4_is_dirty(pml4, page->va)) {
-  //   file_seek(file, ofs);
-  //   file_write(file, page->va, page_read_bytes);
-  //   pml4_set_dirty(pml4, page->va, false);
-  // }
+  struct file *f = file_page->file;
+  off_t ofs = file_page->ofs;
+  size_t page_read_bytes = file_page->page_read_bytes;
+
+  if (pml4_is_dirty(page->owner->pml4, page->va)) {
+    file_write_at(f, page->va, page_read_bytes, ofs);
+    pml4_set_dirty(page->owner->pml4, page->va, 0);
+  }
   memset((void *)file_page, 0, sizeof(struct file_page));
+  pml4_clear_page(page->owner->pml4, page->va);
 }
 
 /* Do the mmap */
@@ -154,35 +158,30 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
 void do_munmap(void *addr) {
   struct thread *cur = thread_current();
   int mmap_count = 0;
-  struct file *f = NULL;
   while (true) {
     struct page *page = spt_find_page(&cur->spt, addr);
 
-    if (page == NULL || VM_TYPE(page->operations->type) != VM_FILE) {
+    if (page == NULL) {
       break;
     }
-    if (page->file.type & VM_MMAP_ADDR) {
+
+    enum vm_type pg_type = VM_TYPE(page->operations->type);
+    if ((pg_type == VM_FILE && (page->file.type & VM_MMAP_ADDR)) ||
+        ((pg_type == VM_UNINIT && VM_TYPE(page->uninit.type) == VM_FILE) &&
+         (page->uninit.type & VM_MMAP_ADDR))) {
       ++mmap_count;
     }
+
     if (mmap_count == 2) {
       // Found another mmapped address, should stop here.
       break;
     }
-    struct file_page *f_page = &page->file;
-    f = f_page->file;
-    off_t ofs = f_page->ofs;
-    size_t page_read_bytes = f_page->page_read_bytes;
-
-    if (pml4_is_dirty(cur->pml4, page->va)) {
-      file_write_at(f, addr, page_read_bytes, ofs);
-      pml4_set_dirty(cur->pml4, page->va, 0);
+    if (page->frame != NULL) {
+      page->frame->page = NULL;
     }
-    f_page->file = NULL;
-
-    pml4_clear_page(cur->pml4, page->va);
+    hash_delete(&cur->spt, &page->hash_elem);
+    destroy(page);
+    free(page);
     addr += PGSIZE;
-  }
-  if (f != NULL) {
-    file_close(f);
   }
 }

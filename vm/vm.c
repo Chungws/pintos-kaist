@@ -323,14 +323,20 @@ bool handle_copy_uninit_page(struct page *src) {
     return false;
   }
 
-  aux->file = file_reopen(src_aux->file);
+  if (VM_TYPE(uninit->type) == VM_FILE) {
+    aux->start_addr = src_aux->start_addr;
+  }
+
+  if (uninit->type & VM_MMAP_ADDR) {
+    aux->file = file_reopen(src_aux->file);
+  } else {
+    aux->file = NULL;
+  }
+
   aux->ofs = src_aux->ofs;
   aux->page_read_bytes = src_aux->page_read_bytes;
   aux->page_zero_bytes = src_aux->page_zero_bytes;
 
-  if (aux->file == NULL) {
-    return false;
-  }
   return vm_alloc_page_with_initializer(uninit->type, src->va, src->writable,
                                         uninit->init, aux);
 }
@@ -447,13 +453,47 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
     struct page *dst_pg = hash_entry(hash_cur(&i), struct page, hash_elem);
     enum vm_type type = dst_pg->operations->type;
 
-    if (VM_TYPE(type) != VM_FILE) {
-      continue;
-    }
+    switch (VM_TYPE(type)) {
+      case VM_UNINIT: {
+        enum vm_type uninit_type = dst_pg->uninit.type;
+        struct lazy_load_args *args =
+            (struct lazy_load_args *)dst_pg->uninit.aux;
 
-    if (!(dst_pg->file.type & VM_MMAP_ADDR)) {
-      struct page *start_addr_pg = spt_find_page(dst, dst_pg->file.start_addr);
-      dst_pg->file.file = start_addr_pg->file.file;
+        if (VM_TYPE(uninit_type) == VM_ANON) {
+          args->file = thread_current()->running_file;
+        } else if (VM_TYPE(uninit_type) == VM_FILE &&
+                   !(uninit_type & VM_MMAP_ADDR)) {
+          struct page *start_addr_pg = spt_find_page(dst, args->start_addr);
+          enum vm_type pg_type = VM_TYPE(start_addr_pg->operations->type);
+
+          if (pg_type == VM_FILE) {
+            args->file = start_addr_pg->file.file;
+          } else if (pg_type == VM_UNINIT) {
+            struct lazy_load_args *start_addr_args =
+                (struct lazy_load_args *)start_addr_pg->uninit.aux;
+            args->file = start_addr_args->file;
+          }
+        }
+        break;
+      }
+      case VM_ANON:
+        break;
+      case VM_FILE: {
+        if (dst_pg->file.type & VM_MMAP_ADDR) {
+          continue;
+        }
+        struct page *start_addr_pg =
+            spt_find_page(dst, dst_pg->file.start_addr);
+        enum vm_type pg_type = VM_TYPE(start_addr_pg->operations->type);
+
+        if (pg_type == VM_FILE) {
+          dst_pg->file.file = start_addr_pg->file.file;
+        } else if (pg_type == VM_UNINIT) {
+          struct lazy_load_args *args =
+              (struct lazy_load_args *)start_addr_pg->uninit.aux;
+          dst_pg->file.file = args->file;
+        }
+      }
     }
   }
   result = true;
@@ -464,9 +504,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 void supplemental_page_table_hash_destructor(struct hash_elem *e,
                                              void *aux UNUSED) {
   struct page *pg = hash_entry(e, struct page, hash_elem);
-  if (pg->operations->type == VM_FILE && (pg->file.type & VM_MMAP_ADDR)) {
-    do_munmap(pg->va);
-  }
+
   if (pg->frame != NULL) {
     pg->frame->page = NULL;
   }
@@ -480,6 +518,36 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt) {
   if (hash_empty(&spt->table)) {
     return;
   }
+
+  while (true) {
+    void *mmap_start_va = NULL;
+
+    struct hash_iterator i;
+    hash_first(&i, &spt->table);
+    while (hash_next(&i)) {
+      struct page *pg = hash_entry(hash_cur(&i), struct page, hash_elem);
+      enum vm_type pg_type = VM_TYPE(pg->operations->type);
+
+      bool check_mmap_file_page = pg_type == VM_FILE;
+      bool check_mmap_uninit_page =
+          pg_type == VM_UNINIT && VM_TYPE(pg->uninit.type) == VM_FILE;
+
+      if (check_mmap_file_page && (pg->file.type & VM_MMAP_ADDR)) {
+        ASSERT(pg->va == pg->file.start_addr);
+        mmap_start_va = pg->va;
+      } else if (check_mmap_uninit_page && (pg->uninit.type & VM_MMAP_ADDR)) {
+        mmap_start_va = pg->va;
+      }
+    }
+
+    if (mmap_start_va != NULL) {
+      do_munmap(mmap_start_va);
+      mmap_start_va = NULL;
+    } else {
+      break;
+    }
+  }
+
   hash_destroy(&spt->table, &supplemental_page_table_hash_destructor);
 }
 

@@ -446,13 +446,19 @@ void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 void sys_munmap(void *addr) {
   struct thread *cur = thread_current();
   struct page *pg = spt_find_page(&cur->spt, addr);
-  if (pg == NULL || VM_TYPE(pg->operations->type) != VM_FILE) {
+  if (pg == NULL) {
     return;
   }
-  if (!(pg->file.type & VM_MMAP_ADDR)) {
-    return;
+
+  enum vm_type pg_type = VM_TYPE(pg->operations->type);
+  bool check_mmap_file_page = pg_type == VM_FILE;
+  bool check_mmap_uninit_page =
+      pg_type == VM_UNINIT && VM_TYPE(pg->uninit.type) == VM_FILE;
+
+  if (check_mmap_file_page && (pg->file.type & VM_MMAP_ADDR) ||
+      check_mmap_uninit_page && (pg->uninit.type & VM_MMAP_ADDR)) {
+    do_munmap(addr);
   }
-  do_munmap(addr);
 }
 
 void validate_address(void *addr) {

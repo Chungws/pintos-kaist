@@ -65,9 +65,6 @@ static void uninit_destroy(struct page *page) {
    * TODO: If you don't have anything to do, just return. */
   struct lazy_load_args *args = (struct lazy_load_args *)uninit->aux;
   if (args != NULL) {
-    if (args->file != NULL) {
-      file_close(args->file);
-    }
     free(uninit->aux);
   }
   memset((void *)uninit, 0, sizeof(struct uninit_page));

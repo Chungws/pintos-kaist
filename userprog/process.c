@@ -216,6 +216,7 @@ static void __do_fork(void *aux) {
   if (current->pml4 == NULL) goto error;
 
   process_activate(current);
+  current->running_file = file_duplicate(parent->running_file);
 #ifdef VM
   supplemental_page_table_init(&current->spt);
   if (!supplemental_page_table_copy(&current->spt, &parent->spt)) goto error;
@@ -238,9 +239,6 @@ static void __do_fork(void *aux) {
   pd->next_fd = parent->proc_desc->next_fd;
   pd->stdin_count = parent->proc_desc->stdin_count;
   pd->stdout_count = parent->proc_desc->stdout_count;
-
-  lock_acquire(&filesys_lock);
-  current->running_file = file_duplicate(parent->running_file);
 
   struct hash_iterator i;
   hash_first(&i, &parent->proc_desc->file_desc_table);
@@ -279,7 +277,6 @@ static void __do_fork(void *aux) {
     }
     hash_insert(&pd->file_desc_table, &new_f_desc->hash_elem);
   }
-  lock_release(&filesys_lock);
 
   current->proc_desc = pd;
 
@@ -355,14 +352,6 @@ int process_exec(void *f_name) {
 
   struct thread *curr = thread_current();
 
-  if (curr->running_file != NULL) {
-    lock_acquire(&filesys_lock);
-    file_allow_write(curr->running_file);
-    file_close(curr->running_file);
-    curr->running_file = NULL;
-    lock_release(&filesys_lock);
-  }
-
   /* Project 2 : argument passing */
 
   /* And then load the binary */
@@ -423,14 +412,6 @@ void process_exit(void) {
     lock_release(&filesys_lock);
   }
 
-  if (curr->running_file != NULL) {
-    lock_acquire(&filesys_lock);
-    file_allow_write(curr->running_file);
-    file_close(curr->running_file);
-    curr->running_file = NULL;
-    lock_release(&filesys_lock);
-  }
-
   struct list_elem *e = list_begin(&curr->child_list);
   struct process_desc *pd;
 
@@ -446,9 +427,7 @@ void process_exit(void) {
 
   struct process_desc *proc_desc = curr->proc_desc;
   if (proc_desc != NULL) {
-    lock_acquire(&filesys_lock);
     hash_destroy(&proc_desc->file_desc_table, &file_desc_table_hash_destructor);
-    lock_release(&filesys_lock);
     proc_desc->is_terminated = true;
 
     printf("%s: exit(%d)\n", curr->name, proc_desc->exit_status);
@@ -472,6 +451,10 @@ static void process_cleanup(void) {
 #ifdef VM
   supplemental_page_table_kill(&curr->spt);
 #endif
+  if (curr->running_file != NULL) {
+    file_close(curr->running_file);
+    curr->running_file = NULL;
+  }
 
   uint64_t *pml4;
   /* Destroy the current process's page directory and switch back
@@ -587,7 +570,6 @@ static bool load(const char *cmd_line, struct intr_frame *if_) {
   if (t->pml4 == NULL) goto done;
   process_activate(thread_current());
 
-  lock_acquire(&filesys_lock);
   /* Open executable file. */
   file = filesys_open(argv[0]);
   if (file == NULL) {
@@ -667,7 +649,6 @@ static bool load(const char *cmd_line, struct intr_frame *if_) {
   file_deny_write(file);
   t->running_file = file;
   success = true;
-  lock_release(&filesys_lock);
 
   /* Set arguments in user stack */
   argument_stack(argc, argv, if_);
@@ -677,7 +658,6 @@ static bool load(const char *cmd_line, struct intr_frame *if_) {
 done:
   /* We arrive here whether the load is successful or not. */
   file_close(file);
-  lock_release(&filesys_lock);
   return success;
 }
 
@@ -983,7 +963,6 @@ struct file_desc *file_desc_create(int fd, struct file *f) {
 
 void file_desc_destroy(struct file_desc *desc) {
   ASSERT(desc != NULL);
-  ASSERT(filesys_lock.holder == thread_current());
   if (desc->file != STDIN_FD && desc->file != STDOUT_FD) {
     file_close(desc->file);
   }
