@@ -399,9 +399,6 @@ bool handle_copy_file_page(struct page *src) {
   dst_file_page->ofs = src_file_page->ofs;
   dst_file_page->page_read_bytes = src_file_page->page_read_bytes;
   dst_file_page->type = src_file_page->type;
-  if (dst_file_page->file == NULL) {
-    return false;
-  }
 
   uint64_t *pml4_src = src->owner->pml4;
   uint64_t *pml4_dst = dst->owner->pml4;

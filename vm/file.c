@@ -166,9 +166,16 @@ void do_munmap(void *addr) {
     }
 
     enum vm_type pg_type = VM_TYPE(page->operations->type);
-    if ((pg_type == VM_FILE && (page->file.type & VM_MMAP_ADDR)) ||
-        ((pg_type == VM_UNINIT && VM_TYPE(page->uninit.type) == VM_FILE) &&
-         (page->uninit.type & VM_MMAP_ADDR))) {
+    bool is_vm_file = (pg_type == VM_FILE);
+    bool is_vm_uninit_file =
+        (pg_type == VM_UNINIT) && (VM_TYPE(page->uninit.type) == VM_FILE);
+
+    if (!is_vm_file && !is_vm_uninit_file) {
+      break;
+    }
+
+    if ((is_vm_file && (page->file.type & VM_MMAP_ADDR)) ||
+        (is_vm_uninit_file && (page->uninit.type & VM_MMAP_ADDR))) {
       ++mmap_count;
     }
 
