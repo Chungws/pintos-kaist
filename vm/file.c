@@ -186,9 +186,7 @@ void do_munmap(void *addr) {
     if (page->frame != NULL) {
       page->frame->page = NULL;
     }
-    hash_delete(&cur->spt, &page->hash_elem);
-    destroy(page);
-    free(page);
+    spt_remove_page(&cur->spt, page);
     addr += PGSIZE;
   }
 }

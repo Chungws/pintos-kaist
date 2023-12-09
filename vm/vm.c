@@ -87,7 +87,7 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
 
     /* TODO: Insert the page into the spt. */
     if (!spt_insert_page(spt, pg)) {
-      vm_dealloc_page(pg);
+      vm_remove_page(pg);
       goto err;
     }
 
@@ -130,8 +130,9 @@ bool spt_insert_page(struct supplemental_page_table *spt, struct page *page) {
 }
 
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page) {
-  vm_dealloc_page(page);
-  return true;
+  ASSERT(hash_find(&spt->table, &page->hash_elem) != NULL);
+  hash_delete(&spt->table, &page->hash_elem);
+  vm_remove_page(page);
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -146,6 +147,10 @@ static struct frame *vm_get_victim(void) {
     for (struct list_elem *e = list_begin(&lru_list.list);
          e != list_end(&lru_list.list); e = list_next(e)) {
       struct frame *fr = list_entry(e, struct frame, elem);
+
+      if (fr->page == NULL) {
+        continue;
+      }
       uint64_t *pml4 = fr->page->owner->pml4;
 
       if (fr->page->do_not_swap_out) {
@@ -258,6 +263,23 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
 void vm_dealloc_page(struct page *page) {
   destroy(page);
   free(page);
+}
+
+void vm_remove_page(struct page *page) {
+  struct list_elem *e = list_begin(&lru_list);
+  lock_acquire(&lru_list.lock);
+  while (e != list_end(&lru_list)) {
+    struct frame *f = list_entry(e, struct frame, elem);
+    if (f->page == page) {
+      list_remove(e);
+      free(f);
+      break;
+    } else {
+      e = list_next(e);
+    }
+  }
+  lock_release(&lru_list.lock);
+  vm_dealloc_page(page);
 }
 
 /* Claim the page that allocate on VA. */
@@ -505,7 +527,7 @@ void supplemental_page_table_hash_destructor(struct hash_elem *e,
   if (pg->frame != NULL) {
     pg->frame->page = NULL;
   }
-  vm_dealloc_page(pg);
+  vm_remove_page(pg);
 }
 
 /* Free the resource hold by the supplemental page table */
