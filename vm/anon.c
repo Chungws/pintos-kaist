@@ -103,6 +103,7 @@ static bool anon_swap_out(struct page *page) {
 
 /* Destroy the anonymous page. PAGE will be freed by the caller. */
 static void anon_destroy(struct page *page) {
+  ASSERT(page != NULL);
   struct anon_page *anon_page = &page->anon;
   int idx = anon_page->swap_table_index;
   if (idx >= 0) {

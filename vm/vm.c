@@ -87,7 +87,7 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
 
     /* TODO: Insert the page into the spt. */
     if (!spt_insert_page(spt, pg)) {
-      vm_remove_page(pg);
+      vm_dealloc_page(pg);
       goto err;
     }
 
@@ -148,9 +148,9 @@ static struct frame *vm_get_victim(void) {
          e != list_end(&lru_list.list); e = list_next(e)) {
       struct frame *fr = list_entry(e, struct frame, elem);
 
-      if (fr->page == NULL) {
-        continue;
-      }
+      // if (fr->page == NULL) {
+      //   continue;
+      // }
       uint64_t *pml4 = fr->page->owner->pml4;
 
       if (fr->page->do_not_swap_out) {
@@ -266,19 +266,13 @@ void vm_dealloc_page(struct page *page) {
 }
 
 void vm_remove_page(struct page *page) {
-  struct list_elem *e = list_begin(&lru_list);
-  lock_acquire(&lru_list.lock);
-  while (e != list_end(&lru_list)) {
-    struct frame *f = list_entry(e, struct frame, elem);
-    if (f->page == page) {
-      list_remove(e);
-      free(f);
-      break;
-    } else {
-      e = list_next(e);
-    }
+  if (page->frame != NULL) {
+    lock_acquire(&lru_list.lock);
+    list_remove(&page->frame->elem);
+    free(page->frame);
+    page->frame = NULL;
+    lock_release(&lru_list.lock);
   }
-  lock_release(&lru_list.lock);
   vm_dealloc_page(page);
 }
 
@@ -523,10 +517,6 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 void supplemental_page_table_hash_destructor(struct hash_elem *e,
                                              void *aux UNUSED) {
   struct page *pg = hash_entry(e, struct page, hash_elem);
-
-  if (pg->frame != NULL) {
-    pg->frame->page = NULL;
-  }
   vm_remove_page(pg);
 }
 

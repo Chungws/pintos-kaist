@@ -94,6 +94,7 @@ static bool file_backed_swap_out(struct page *page) {
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void file_backed_destroy(struct page *page) {
+  ASSERT(page != NULL);
   struct file_page *file_page = &page->file;
 
   struct thread *cur = thread_current();
@@ -102,12 +103,15 @@ static void file_backed_destroy(struct page *page) {
   off_t ofs = file_page->ofs;
   size_t page_read_bytes = file_page->page_read_bytes;
 
-  if (pml4_is_dirty(page->owner->pml4, page->va)) {
-    file_write_at(f, page->va, page_read_bytes, ofs);
-    pml4_set_dirty(page->owner->pml4, page->va, 0);
+  if (pml4_get_page(page->owner->pml4, page->va) != NULL) {
+    if (pml4_is_dirty(page->owner->pml4, page->va)) {
+      file_write_at(f, page->va, page_read_bytes, ofs);
+      pml4_set_dirty(page->owner->pml4, page->va, 0);
+    }
+    pml4_clear_page(page->owner->pml4, page->va);
   }
+
   memset((void *)file_page, 0, sizeof(struct file_page));
-  pml4_clear_page(page->owner->pml4, page->va);
 }
 
 /* Do the mmap */
@@ -182,9 +186,6 @@ void do_munmap(void *addr) {
     if (mmap_count == 2) {
       // Found another mmapped address, should stop here.
       break;
-    }
-    if (page->frame != NULL) {
-      page->frame->page = NULL;
     }
     spt_remove_page(&cur->spt, page);
     addr += PGSIZE;

@@ -60,6 +60,7 @@ static bool uninit_initialize(struct page *page, void *kva) {
  * exit, which are never referenced during the execution.
  * PAGE will be freed by the caller. */
 static void uninit_destroy(struct page *page) {
+  ASSERT(page != NULL);
   struct uninit_page *uninit = &page->uninit;
   /* TODO: Fill this function.
    * TODO: If you don't have anything to do, just return. */
