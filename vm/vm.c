@@ -266,14 +266,14 @@ void vm_dealloc_page(struct page *page) {
 }
 
 void vm_remove_page(struct page *page) {
-  if (page->frame != NULL) {
+  struct frame *fr = page->frame;
+  vm_dealloc_page(page);
+  if (fr != NULL) {
     lock_acquire(&lru_list.lock);
-    list_remove(&page->frame->elem);
-    free(page->frame);
-    page->frame = NULL;
+    list_remove(&fr->elem);
+    free(fr);
     lock_release(&lru_list.lock);
   }
-  vm_dealloc_page(page);
 }
 
 /* Claim the page that allocate on VA. */
