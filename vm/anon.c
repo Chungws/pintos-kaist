@@ -47,7 +47,6 @@ bool anon_initializer(struct page *page, enum vm_type type, void *kva) {
   /* Set up the handler */
   page->operations = &anon_ops;
   struct uninit_page *uninit_page = &page->uninit;
-  memset((void *)uninit_page, 0, sizeof(struct uninit_page));
 
   struct anon_page *anon_page = &page->anon;
   anon_page->swap_table_index = -1;
@@ -113,7 +112,4 @@ static void anon_destroy(struct page *page) {
     }
     lock_release(&swap_table.lock);
   }
-
-  memset((void *)anon_page, 0, sizeof(struct anon_page));
-  pml4_clear_page(&page->owner->pml4, page->va);
 }

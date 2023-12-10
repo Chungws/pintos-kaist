@@ -216,7 +216,6 @@ static void __do_fork(void *aux) {
   if (current->pml4 == NULL) goto error;
 
   process_activate(current);
-  current->running_file = file_duplicate(parent->running_file);
 #ifdef VM
   supplemental_page_table_init(&current->spt);
   if (!supplemental_page_table_copy(&current->spt, &parent->spt)) goto error;
@@ -239,6 +238,8 @@ static void __do_fork(void *aux) {
   pd->next_fd = parent->proc_desc->next_fd;
   pd->stdin_count = parent->proc_desc->stdin_count;
   pd->stdout_count = parent->proc_desc->stdout_count;
+
+  current->running_file = file_duplicate(parent->running_file);
 
   struct hash_iterator i;
   hash_first(&i, &parent->proc_desc->file_desc_table);
@@ -849,13 +850,14 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
     /* TODO: Set up aux to pass information to the lazy_load_segment. */
     struct lazy_load_args *args =
         (struct lazy_load_args *)calloc(1, sizeof(struct lazy_load_args));
-    args->file = file;
+    args->file = file_reopen(file);
     args->page_read_bytes = page_read_bytes;
     args->page_zero_bytes = page_zero_bytes;
     args->ofs = ofs;
 
     if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable,
                                         lazy_load_segment, (void *)args)) {
+      file_close(args->file);
       free(args);
       return false;
     }

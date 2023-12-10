@@ -93,6 +93,13 @@ struct page_operations {
  * All designs up to you for this. */
 struct supplemental_page_table {
   struct hash table;
+  struct list mmap_table;
+};
+
+struct mmap_info {
+  void *start_va;
+  size_t num_pages;
+  struct list_elem elem;
 };
 
 #include "threads/thread.h"
@@ -103,6 +110,8 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt);
 struct page *spt_find_page(struct supplemental_page_table *spt, void *va);
 bool spt_insert_page(struct supplemental_page_table *spt, struct page *page);
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page);
+struct mmap_info *spt_find_mmap_info(struct supplemental_page_table *spt,
+                                     void *addr);
 
 void vm_init(void);
 bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
@@ -114,7 +123,6 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
                                     bool writable, vm_initializer *init,
                                     void *aux);
 void vm_dealloc_page(struct page *page);
-void vm_remove_page(struct page *page);
 bool vm_claim_page(void *va);
 enum vm_type page_get_type(struct page *page);
 
@@ -126,7 +134,6 @@ struct lazy_load_args {
   off_t ofs;
   size_t page_read_bytes;
   size_t page_zero_bytes;
-  void *start_addr;
 };
 
 #endif /* VM_VM_H */

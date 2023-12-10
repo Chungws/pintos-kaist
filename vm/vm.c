@@ -125,13 +125,19 @@ bool spt_insert_page(struct supplemental_page_table *spt, struct page *page) {
   if (e == NULL) {
     succ = true;
   }
+  page->do_not_swap_out = false;
 
   return succ;
 }
 
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page) {
   ASSERT(hash_find(&spt->table, &page->hash_elem) != NULL);
-  hash_delete(&spt->table, &page->hash_elem);
+
+  struct hash_elme *e = hash_delete(&spt->table, &page->hash_elem);
+  if (e == NULL) {
+    return;
+  }
+
   vm_remove_page(page);
 }
 
@@ -267,10 +273,21 @@ void vm_dealloc_page(struct page *page) {
 
 void vm_remove_page(struct page *page) {
   struct frame *fr = page->frame;
+  void *va = page->va;
+  uint64_t *pml4 = page->owner->pml4;
   vm_dealloc_page(page);
+
+  if (pml4_get_page(pml4, va) != NULL) {
+    pml4_clear_page(pml4, va);
+  }
+
   if (fr != NULL) {
     lock_acquire(&lru_list.lock);
     list_remove(&fr->elem);
+    fr->page = NULL;
+    if (fr->kva != NULL) {
+      palloc_free_page(fr->kva);
+    }
     free(fr);
     lock_release(&lru_list.lock);
   }
@@ -327,6 +344,7 @@ bool supplemental_page_table_hash_less_func(const struct hash_elem *a,
 void supplemental_page_table_init(struct supplemental_page_table *spt) {
   hash_init(&spt->table, &supplemental_page_table_hash,
             &supplemental_page_table_hash_less_func, NULL);
+  list_init(&spt->mmap_table);
 }
 
 bool handle_copy_uninit_page(struct page *src) {
@@ -339,16 +357,7 @@ bool handle_copy_uninit_page(struct page *src) {
     return false;
   }
 
-  if (VM_TYPE(uninit->type) == VM_FILE) {
-    aux->start_addr = src_aux->start_addr;
-  }
-
-  if (uninit->type & VM_MMAP_ADDR) {
-    aux->file = file_reopen(src_aux->file);
-  } else {
-    aux->file = NULL;
-  }
-
+  aux->file = file_reopen(src_aux->file);
   aux->ofs = src_aux->ofs;
   aux->page_read_bytes = src_aux->page_read_bytes;
   aux->page_zero_bytes = src_aux->page_zero_bytes;
@@ -372,7 +381,6 @@ bool handle_copy_anon_page(struct page *src) {
 
   dst->anon.swap_table_index = -1;
   dst->anon.type = src->anon.type;
-  dst->do_not_swap_out = src->do_not_swap_out;
 
   uint64_t *pml4_src = src->owner->pml4;
   uint64_t *pml4_dst = dst->owner->pml4;
@@ -402,16 +410,10 @@ bool handle_copy_file_page(struct page *src) {
     return false;
   }
 
-  dst->do_not_swap_out = src->do_not_swap_out;
-
   struct file_page *src_file_page = &src->file;
   struct file_page *dst_file_page = &dst->file;
 
-  if (dst_file_page->type & VM_MMAP_ADDR) {
-    dst_file_page->file = file_reopen(src_file_page->file);
-  }
-
-  dst_file_page->start_addr = src_file_page->start_addr;
+  dst_file_page->file = file_reopen(src_file_page->file);
   dst_file_page->ofs = src_file_page->ofs;
   dst_file_page->page_read_bytes = src_file_page->page_read_bytes;
   dst_file_page->type = src_file_page->type;
@@ -461,54 +463,17 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
     }
   }
 
-  hash_first(&i, &dst->table);
-  while (hash_next(&i)) {
-    struct page *dst_pg = hash_entry(hash_cur(&i), struct page, hash_elem);
-    enum vm_type type = dst_pg->operations->type;
-
-    switch (VM_TYPE(type)) {
-      case VM_UNINIT: {
-        enum vm_type uninit_type = dst_pg->uninit.type;
-        struct lazy_load_args *args =
-            (struct lazy_load_args *)dst_pg->uninit.aux;
-
-        if (VM_TYPE(uninit_type) == VM_ANON) {
-          args->file = thread_current()->running_file;
-        } else if (VM_TYPE(uninit_type) == VM_FILE &&
-                   !(uninit_type & VM_MMAP_ADDR)) {
-          struct page *start_addr_pg = spt_find_page(dst, args->start_addr);
-          enum vm_type pg_type = VM_TYPE(start_addr_pg->operations->type);
-
-          if (pg_type == VM_FILE) {
-            args->file = start_addr_pg->file.file;
-          } else if (pg_type == VM_UNINIT) {
-            struct lazy_load_args *start_addr_args =
-                (struct lazy_load_args *)start_addr_pg->uninit.aux;
-            args->file = start_addr_args->file;
-          }
-        }
-        break;
-      }
-      case VM_ANON:
-        break;
-      case VM_FILE: {
-        if (dst_pg->file.type & VM_MMAP_ADDR) {
-          continue;
-        }
-        struct page *start_addr_pg =
-            spt_find_page(dst, dst_pg->file.start_addr);
-        enum vm_type pg_type = VM_TYPE(start_addr_pg->operations->type);
-
-        if (pg_type == VM_FILE) {
-          dst_pg->file.file = start_addr_pg->file.file;
-        } else if (pg_type == VM_UNINIT) {
-          struct lazy_load_args *args =
-              (struct lazy_load_args *)start_addr_pg->uninit.aux;
-          dst_pg->file.file = args->file;
-        }
-      }
-    }
+  struct list *mmap_table = &src->mmap_table;
+  for (struct list_elem *e = list_begin(mmap_table); e != list_end(mmap_table);
+       e = list_next(e)) {
+    struct mmap_info *src_info = list_entry(e, struct mmap_info, elem);
+    struct mmap_info *dst_info =
+        (struct mmap_info *)calloc(1, sizeof(struct mmap_info));
+    dst_info->num_pages = src_info->num_pages;
+    dst_info->start_va = src_info->start_va;
+    list_push_back(&dst->mmap_table, &dst_info->elem);
   }
+
   result = true;
 
   return result;
@@ -528,36 +493,34 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt) {
     return;
   }
 
-  while (true) {
-    void *mmap_start_va = NULL;
+  struct list *mmap_table = &spt->mmap_table;
+  struct list_elem *e = list_begin(mmap_table);
+  while (!list_empty(mmap_table)) {
+    struct mmap_info *info = list_entry(e, struct mmap_info, elem);
+    do_munmap(info->start_va);
+    e = list_begin(mmap_table);
+  }
 
-    struct hash_iterator i;
-    hash_first(&i, &spt->table);
-    while (hash_next(&i)) {
-      struct page *pg = hash_entry(hash_cur(&i), struct page, hash_elem);
-      enum vm_type pg_type = VM_TYPE(pg->operations->type);
+  hash_destroy(&spt->table, &supplemental_page_table_hash_destructor);
+}
 
-      bool check_mmap_file_page = pg_type == VM_FILE;
-      bool check_mmap_uninit_page =
-          pg_type == VM_UNINIT && VM_TYPE(pg->uninit.type) == VM_FILE;
+struct mmap_info *spt_find_mmap_info(struct supplemental_page_table *spt,
+                                     void *addr) {
+  struct list *mmap_table = &spt->mmap_table;
+  void *va = pg_round_down(addr);
 
-      if (check_mmap_file_page && (pg->file.type & VM_MMAP_ADDR)) {
-        ASSERT(pg->va == pg->file.start_addr);
-        mmap_start_va = pg->va;
-      } else if (check_mmap_uninit_page && (pg->uninit.type & VM_MMAP_ADDR)) {
-        mmap_start_va = pg->va;
-      }
-    }
-
-    if (mmap_start_va != NULL) {
-      do_munmap(mmap_start_va);
-      mmap_start_va = NULL;
-    } else {
+  struct mmap_info *minfo = NULL;
+  struct list_elem *e;
+  for (e = list_begin(mmap_table); e != list_end(mmap_table);
+       e = list_next(e)) {
+    struct mmap_info *info = list_entry(e, struct mmap_info, elem);
+    if (info->start_va == va) {
+      minfo = info;
       break;
     }
   }
 
-  hash_destroy(&spt->table, &supplemental_page_table_hash_destructor);
+  return minfo;
 }
 
 bool pin_page(void *addr) {

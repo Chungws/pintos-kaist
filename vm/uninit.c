@@ -13,6 +13,7 @@
 
 #include "vm/uninit.h"
 // clang-format on
+#include "threads/malloc.h"
 
 static bool uninit_initialize(struct page *page, void *kva);
 static void uninit_destroy(struct page *page);
@@ -64,10 +65,4 @@ static void uninit_destroy(struct page *page) {
   struct uninit_page *uninit = &page->uninit;
   /* TODO: Fill this function.
    * TODO: If you don't have anything to do, just return. */
-  struct lazy_load_args *args = (struct lazy_load_args *)uninit->aux;
-  if (args != NULL) {
-    free(uninit->aux);
-  }
-  memset((void *)uninit, 0, sizeof(struct uninit_page));
-  pml4_clear_page(&page->owner->pml4, page->va);
 }
