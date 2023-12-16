@@ -8,6 +8,7 @@
 #include "threads/mmu.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "userprog/process.h"
 #include "vm/inspect.h"
 
 struct frame_list {
@@ -133,7 +134,7 @@ bool spt_insert_page(struct supplemental_page_table *spt, struct page *page) {
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page) {
   ASSERT(hash_find(&spt->table, &page->hash_elem) != NULL);
 
-  struct hash_elme *e = hash_delete(&spt->table, &page->hash_elem);
+  struct hash_elem *e = hash_delete(&spt->table, &page->hash_elem);
   if (e == NULL) {
     return;
   }
@@ -357,7 +358,9 @@ bool handle_copy_uninit_page(struct page *src) {
     return false;
   }
 
+  filesys_lock_acquire();
   aux->file = file_reopen(src_aux->file);
+  filesys_lock_release();
   aux->ofs = src_aux->ofs;
   aux->page_read_bytes = src_aux->page_read_bytes;
   aux->page_zero_bytes = src_aux->page_zero_bytes;
@@ -413,7 +416,9 @@ bool handle_copy_file_page(struct page *src) {
   struct file_page *src_file_page = &src->file;
   struct file_page *dst_file_page = &dst->file;
 
+  filesys_lock_acquire();
   dst_file_page->file = file_reopen(src_file_page->file);
+  filesys_lock_release();
   dst_file_page->ofs = src_file_page->ofs;
   dst_file_page->page_read_bytes = src_file_page->page_read_bytes;
   dst_file_page->type = src_file_page->type;

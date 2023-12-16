@@ -239,7 +239,9 @@ static void __do_fork(void *aux) {
   pd->stdin_count = parent->proc_desc->stdin_count;
   pd->stdout_count = parent->proc_desc->stdout_count;
 
+  filesys_lock_acquire();
   current->running_file = file_duplicate(parent->running_file);
+  filesys_lock_release();
 
   struct hash_iterator i;
   hash_first(&i, &parent->proc_desc->file_desc_table);
@@ -273,7 +275,9 @@ static void __do_fork(void *aux) {
         }
       }
       if (!found) {
+        filesys_lock_acquire();
         new_f_desc->file = file_duplicate(parent_file);
+        filesys_lock_release();
       }
     }
     hash_insert(&pd->file_desc_table, &new_f_desc->hash_elem);
@@ -356,7 +360,9 @@ int process_exec(void *f_name) {
   /* Project 2 : argument passing */
 
   /* And then load the binary */
+  filesys_lock_acquire();
   success = load(file_name, &_if);
+  filesys_lock_release();
 
   // hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
   /* Project 2 : argument passing */
@@ -809,13 +815,20 @@ bool lazy_load_segment(struct page *page, void *aux) {
   off_t ofs = args->ofs;
   void *kpage = page->frame->kva;
 
+  if (file == NULL) {
+    return false;
+  }
+  filesys_lock_acquire();
   file_seek(file, ofs);
 
   if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes) {
+    filesys_lock_release();
     free(kpage);
     return false;
   }
+  filesys_lock_release();
   memset(kpage + page_read_bytes, 0, page_zero_bytes);
+  free(aux);
   return true;
 }
 
@@ -907,9 +920,17 @@ struct process_desc *find_child_desc(tid_t tid) {
 }
 
 /* filesys_lock related functions. */
-void filesys_lock_acquire(void) { lock_acquire(&filesys_lock); }
+void filesys_lock_acquire(void) {
+  if (!lock_held_by_current_thread(&filesys_lock)) {
+    lock_acquire(&filesys_lock);
+  }
+}
 
-void filesys_lock_release(void) { lock_release(&filesys_lock); }
+void filesys_lock_release(void) {
+  if (lock_held_by_current_thread(&filesys_lock)) {
+    lock_release(&filesys_lock);
+  }
+}
 
 /* process_desc related functions. */
 struct process_desc *proc_desc_create(void) {

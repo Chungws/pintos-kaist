@@ -108,7 +108,9 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
               off_t offset) {
   void *start_addr = addr;
 
+  filesys_lock_acquire();
   size_t read_bytes = file_length(file);
+  filesys_lock_release();
   if (length <= read_bytes) {
     read_bytes = length;
   }
@@ -121,14 +123,15 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
 
     struct lazy_load_args *args =
         (struct lazy_load_args *)calloc(1, sizeof(struct lazy_load_args));
-    enum vm_type type = VM_FILE;
+    filesys_lock_acquire();
     args->file = file_reopen(file);
+    filesys_lock_release();
     args->ofs = offset;
     args->page_read_bytes = page_read_bytes;
     args->page_zero_bytes = page_zero_bytes;
 
-    if (!vm_alloc_page_with_initializer(type, addr, writable, lazy_load_segment,
-                                        (void *)args)) {
+    if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable,
+                                        lazy_load_segment, (void *)args)) {
       free(args);
       return NULL;
     }
