@@ -415,9 +415,7 @@ void process_exit(void) {
    * TODO: Implement process termination message (see
    * TODO: project2/process_termination.html).
    * TODO: We recommend you to implement process resource cleanup here. */
-  if (filesys_lock.holder == curr) {
-    lock_release(&filesys_lock);
-  }
+  filesys_lock_release();
 
   struct list_elem *e = list_begin(&curr->child_list);
   struct process_desc *pd;
@@ -818,15 +816,11 @@ bool lazy_load_segment(struct page *page, void *aux) {
   if (file == NULL) {
     return false;
   }
-  filesys_lock_acquire();
-  file_seek(file, ofs);
-
-  if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes) {
+  if (page_read_bytes > 0) {
+    filesys_lock_acquire();
+    file_read_at(file, kpage, page_read_bytes, ofs);
     filesys_lock_release();
-    free(kpage);
-    return false;
   }
-  filesys_lock_release();
   memset(kpage + page_read_bytes, 0, page_zero_bytes);
   free(aux);
   return true;
