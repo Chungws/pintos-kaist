@@ -432,7 +432,9 @@ void process_exit(void) {
 
   struct process_desc *proc_desc = curr->proc_desc;
   if (proc_desc != NULL) {
+    filesys_lock_acquire();
     hash_destroy(&proc_desc->file_desc_table, &file_desc_table_hash_destructor);
+    filesys_lock_release();
     proc_desc->is_terminated = true;
 
     printf("%s: exit(%d)\n", curr->name, proc_desc->exit_status);

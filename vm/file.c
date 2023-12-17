@@ -41,7 +41,9 @@ bool file_backed_initializer(struct page *page, enum vm_type type, void *kva) {
   size_t page_read_bytes = args->page_read_bytes;
 
   struct file_page *file_page = &page->file;
+  filesys_lock_acquire();
   file_page->file = file_reopen(f);
+  filesys_lock_release();
   file_page->ofs = ofs;
   file_page->page_read_bytes = page_read_bytes;
   file_page->type = type;
@@ -58,11 +60,15 @@ static bool file_backed_swap_in(struct page *page, void *kva) {
   const size_t page_read_bytes = file_page->page_read_bytes;
   const size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-  file_seek(file, ofs);
-  if (page_read_bytes != (size_t)file_read(file, kva, page_read_bytes)) {
+  if (file == NULL) {
     return false;
   }
+
+  filesys_lock_acquire();
+  file_read_at(file, kva, page_read_bytes, ofs);
+  filesys_lock_release();
   memset(kva + page_read_bytes, 0, page_zero_bytes);
+
   return true;
 }
 
@@ -77,8 +83,9 @@ static bool file_backed_swap_out(struct page *page) {
   const size_t page_read_bytes = file_page->page_read_bytes;
 
   if (pml4_is_dirty(pml4, page->va)) {
-    file_seek(file, ofs);
-    file_write(file, page->va, page_read_bytes);
+    filesys_lock_acquire();
+    file_write_at(file, page->va, page_read_bytes, ofs);
+    filesys_lock_release();
     pml4_set_dirty(pml4, page->va, false);
   }
   pml4_clear_page(pml4, page->va);
@@ -95,12 +102,14 @@ static void file_backed_destroy(struct page *page) {
   off_t ofs = file_page->ofs;
   size_t page_read_bytes = file_page->page_read_bytes;
 
+  filesys_lock_acquire();
   if (page->writable && pml4_get_page(page->owner->pml4, page->va) != NULL &&
       pml4_is_dirty(page->owner->pml4, page->va)) {
     file_write_at(f, page->va, page_read_bytes, ofs);
     pml4_set_dirty(page->owner->pml4, page->va, 0);
   }
   file_close(f);
+  filesys_lock_release();
 }
 
 /* Do the mmap */
@@ -132,6 +141,9 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file,
 
     if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable,
                                         lazy_load_segment, (void *)args)) {
+      filesys_lock_acquire();
+      file_close(args->file);
+      filesys_lock_release();
       free(args);
       return NULL;
     }
