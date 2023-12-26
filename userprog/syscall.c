@@ -235,6 +235,9 @@ int sys_read(int fd, void *buffer, unsigned size) {
   validate_buffer((void *)buffer, size, true);
 #endif
   struct thread *cur = thread_current();
+  for (int i = 0; i < size; i += PGSIZE) {
+    pin_page(buffer + i);
+  }
 
   filesys_lock_acquire();
   struct process_desc *pd = cur->proc_desc;
@@ -262,6 +265,9 @@ int sys_read(int fd, void *buffer, unsigned size) {
   }
 
   filesys_lock_release();
+  for (int i = 0; i < size; i += PGSIZE) {
+    unpin_page(buffer + i);
+  }
   return result;
 }
 
@@ -272,9 +278,11 @@ int sys_write(int fd, const void *buffer, unsigned size) {
 #else
   validate_buffer((void *)buffer, size, false);
 #endif
+  for (int i = 0; i < size; i += PGSIZE) {
+    pin_page(buffer + i);
+  }
   struct thread *cur = thread_current();
 
-  filesys_lock_acquire();
   struct process_desc *pd = cur->proc_desc;
   struct file *f =
       file_desc_table_find_file(&cur->proc_desc->file_desc_table, fd);
@@ -296,9 +304,13 @@ int sys_write(int fd, const void *buffer, unsigned size) {
   } else if (f == NULL || f == STDIN_FD) {
     result = -1;
   } else {
+    filesys_lock_acquire();
     result = file_write(f, buffer, size);
+    filesys_lock_release();
   }
-  filesys_lock_release();
+  for (int i = 0; i < size; i += PGSIZE) {
+    unpin_page(buffer + i);
+  }
   return result;
 }
 
@@ -434,12 +446,10 @@ void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 void sys_munmap(void *addr) {
   struct thread *cur = thread_current();
   struct page *pg = spt_find_page(&cur->spt, addr);
-  if (pg == NULL || VM_TYPE(pg->operations->type) != VM_FILE) {
+  if (pg == NULL) {
     return;
   }
-  if (!(pg->file.type & VM_MMAP_ADDR)) {
-    return;
-  }
+
   do_munmap(addr);
 }
 

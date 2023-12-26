@@ -8,6 +8,7 @@
 #include "threads/mmu.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "userprog/process.h"
 #include "vm/inspect.h"
 
 struct frame_list {
@@ -83,6 +84,7 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
     uninit_new(pg, upage, init, type, aux, page_initializer);
     pg->owner = thread_current();
     pg->writable = writable;
+    pg->do_not_swap_out = false;
 
     /* TODO: Insert the page into the spt. */
     if (!spt_insert_page(spt, pg)) {
@@ -124,18 +126,27 @@ bool spt_insert_page(struct supplemental_page_table *spt, struct page *page) {
   if (e == NULL) {
     succ = true;
   }
+  page->do_not_swap_out = false;
 
   return succ;
 }
 
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page) {
-  vm_dealloc_page(page);
-  return true;
+  ASSERT(hash_find(&spt->table, &page->hash_elem) != NULL);
+
+  struct hash_elem *e = hash_delete(&spt->table, &page->hash_elem);
+  if (e == NULL) {
+    return;
+  }
+
+  vm_remove_page(page);
 }
 
 /* Get the struct frame, that will be evicted. */
 static struct frame *vm_get_victim(void) {
   struct frame *victim = NULL;
+  struct frame *victim_candidate = NULL;
+  bool found_candidate = false;
   /* TODO: The policy for eviction is up to you. */
 
   lock_acquire(&lru_list.lock);
@@ -143,7 +154,19 @@ static struct frame *vm_get_victim(void) {
     for (struct list_elem *e = list_begin(&lru_list.list);
          e != list_end(&lru_list.list); e = list_next(e)) {
       struct frame *fr = list_entry(e, struct frame, elem);
+
+      // if (fr->page == NULL) {
+      //   continue;
+      // }
       uint64_t *pml4 = fr->page->owner->pml4;
+
+      if (fr->page->do_not_swap_out) {
+        continue;
+      }
+      if (!found_candidate) {
+        victim_candidate = fr;
+        found_candidate = true;
+      }
 
       if (pml4_is_accessed(pml4, fr->page->va)) {
         pml4_set_accessed(pml4, fr->page->va, false);
@@ -153,7 +176,8 @@ static struct frame *vm_get_victim(void) {
       }
     }
     if (victim == NULL) {
-      victim = list_entry(list_begin(&lru_list.list), struct frame, elem);
+      ASSERT(victim_candidate != NULL);
+      victim = victim_candidate;
     }
     list_remove(&victim->elem);
     list_push_back(&lru_list.list, &victim->elem);
@@ -248,6 +272,28 @@ void vm_dealloc_page(struct page *page) {
   free(page);
 }
 
+void vm_remove_page(struct page *page) {
+  struct frame *fr = page->frame;
+  void *va = page->va;
+  uint64_t *pml4 = page->owner->pml4;
+  vm_dealloc_page(page);
+
+  if (pml4_get_page(pml4, va) != NULL) {
+    pml4_clear_page(pml4, va);
+  }
+
+  if (fr != NULL) {
+    lock_acquire(&lru_list.lock);
+    list_remove(&fr->elem);
+    fr->page = NULL;
+    if (fr->kva != NULL) {
+      palloc_free_page(fr->kva);
+    }
+    free(fr);
+    lock_release(&lru_list.lock);
+  }
+}
+
 /* Claim the page that allocate on VA. */
 bool vm_claim_page(void *va) {
   struct page *page = NULL;
@@ -299,6 +345,7 @@ bool supplemental_page_table_hash_less_func(const struct hash_elem *a,
 void supplemental_page_table_init(struct supplemental_page_table *spt) {
   hash_init(&spt->table, &supplemental_page_table_hash,
             &supplemental_page_table_hash_less_func, NULL);
+  list_init(&spt->mmap_table);
 }
 
 bool handle_copy_uninit_page(struct page *src) {
@@ -311,14 +358,13 @@ bool handle_copy_uninit_page(struct page *src) {
     return false;
   }
 
+  filesys_lock_acquire();
   aux->file = file_reopen(src_aux->file);
+  filesys_lock_release();
   aux->ofs = src_aux->ofs;
   aux->page_read_bytes = src_aux->page_read_bytes;
   aux->page_zero_bytes = src_aux->page_zero_bytes;
 
-  if (aux->file == NULL) {
-    return false;
-  }
   return vm_alloc_page_with_initializer(uninit->type, src->va, src->writable,
                                         uninit->init, aux);
 }
@@ -337,6 +383,7 @@ bool handle_copy_anon_page(struct page *src) {
   }
 
   dst->anon.swap_table_index = -1;
+  dst->anon.type = src->anon.type;
 
   uint64_t *pml4_src = src->owner->pml4;
   uint64_t *pml4_dst = dst->owner->pml4;
@@ -369,12 +416,12 @@ bool handle_copy_file_page(struct page *src) {
   struct file_page *src_file_page = &src->file;
   struct file_page *dst_file_page = &dst->file;
 
+  filesys_lock_acquire();
   dst_file_page->file = file_reopen(src_file_page->file);
+  filesys_lock_release();
   dst_file_page->ofs = src_file_page->ofs;
   dst_file_page->page_read_bytes = src_file_page->page_read_bytes;
-  if (dst_file_page->file == NULL) {
-    return false;
-  }
+  dst_file_page->type = src_file_page->type;
 
   uint64_t *pml4_src = src->owner->pml4;
   uint64_t *pml4_dst = dst->owner->pml4;
@@ -420,6 +467,18 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
         break;
     }
   }
+
+  struct list *mmap_table = &src->mmap_table;
+  for (struct list_elem *e = list_begin(mmap_table); e != list_end(mmap_table);
+       e = list_next(e)) {
+    struct mmap_info *src_info = list_entry(e, struct mmap_info, elem);
+    struct mmap_info *dst_info =
+        (struct mmap_info *)calloc(1, sizeof(struct mmap_info));
+    dst_info->num_pages = src_info->num_pages;
+    dst_info->start_va = src_info->start_va;
+    list_push_back(&dst->mmap_table, &dst_info->elem);
+  }
+
   result = true;
 
   return result;
@@ -428,13 +487,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 void supplemental_page_table_hash_destructor(struct hash_elem *e,
                                              void *aux UNUSED) {
   struct page *pg = hash_entry(e, struct page, hash_elem);
-  if (pg->operations->type == VM_FILE) {
-    do_munmap(pg->va);
-  }
-  if (pg->frame != NULL) {
-    pg->frame->page = NULL;
-  }
-  vm_dealloc_page(pg);
+  vm_remove_page(pg);
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -444,5 +497,55 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt) {
   if (hash_empty(&spt->table)) {
     return;
   }
+
+  struct list *mmap_table = &spt->mmap_table;
+  struct list_elem *e = list_begin(mmap_table);
+  while (!list_empty(mmap_table)) {
+    struct mmap_info *info = list_entry(e, struct mmap_info, elem);
+    do_munmap(info->start_va);
+    e = list_begin(mmap_table);
+  }
+
   hash_destroy(&spt->table, &supplemental_page_table_hash_destructor);
+}
+
+struct mmap_info *spt_find_mmap_info(struct supplemental_page_table *spt,
+                                     void *addr) {
+  struct list *mmap_table = &spt->mmap_table;
+  void *va = pg_round_down(addr);
+
+  struct mmap_info *minfo = NULL;
+  struct list_elem *e;
+  for (e = list_begin(mmap_table); e != list_end(mmap_table);
+       e = list_next(e)) {
+    struct mmap_info *info = list_entry(e, struct mmap_info, elem);
+    if (info->start_va == va) {
+      minfo = info;
+      break;
+    }
+  }
+
+  return minfo;
+}
+
+bool pin_page(void *addr) {
+  struct supplemental_page_table *spt = &thread_current()->spt;
+  struct page *pg = spt_find_page(spt, addr);
+  if (pg == NULL) {
+    return false;
+  }
+
+  pg->do_not_swap_out = true;
+  return true;
+}
+
+bool unpin_page(void *addr) {
+  struct supplemental_page_table *spt = &thread_current()->spt;
+  struct page *pg = spt_find_page(spt, addr);
+  if (pg == NULL) {
+    return false;
+  }
+
+  pg->do_not_swap_out = false;
+  return true;
 }

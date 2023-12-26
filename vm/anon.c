@@ -47,7 +47,6 @@ bool anon_initializer(struct page *page, enum vm_type type, void *kva) {
   /* Set up the handler */
   page->operations = &anon_ops;
   struct uninit_page *uninit_page = &page->uninit;
-  memset((void *)uninit_page, 0, sizeof(struct uninit_page));
 
   struct anon_page *anon_page = &page->anon;
   anon_page->swap_table_index = -1;
@@ -103,17 +102,14 @@ static bool anon_swap_out(struct page *page) {
 
 /* Destroy the anonymous page. PAGE will be freed by the caller. */
 static void anon_destroy(struct page *page) {
+  ASSERT(page != NULL);
   struct anon_page *anon_page = &page->anon;
   int idx = anon_page->swap_table_index;
-  if (idx < 0) {
-    return;
+  if (idx >= 0) {
+    lock_acquire(&swap_table.lock);
+    if (bitmap_test(swap_table.table, idx) == true) {
+      bitmap_set(swap_table.table, idx, false);
+    }
+    lock_release(&swap_table.lock);
   }
-
-  lock_acquire(&swap_table.lock);
-  if (bitmap_test(swap_table.table, idx) == true) {
-    bitmap_set(swap_table.table, idx, false);
-  }
-  lock_release(&swap_table.lock);
-
-  memset((void *)anon_page, 0, sizeof(struct anon_page));
 }

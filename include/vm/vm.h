@@ -51,6 +51,7 @@ struct page {
   struct thread *owner;
   struct hash_elem hash_elem;
   bool writable;
+  bool do_not_swap_out;
 
   /* Per-type data are binded into the union.
    * Each function automatically detects the current union */
@@ -92,6 +93,13 @@ struct page_operations {
  * All designs up to you for this. */
 struct supplemental_page_table {
   struct hash table;
+  struct list mmap_table;
+};
+
+struct mmap_info {
+  void *start_va;
+  size_t num_pages;
+  struct list_elem elem;
 };
 
 #include "threads/thread.h"
@@ -102,6 +110,8 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt);
 struct page *spt_find_page(struct supplemental_page_table *spt, void *va);
 bool spt_insert_page(struct supplemental_page_table *spt, struct page *page);
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page);
+struct mmap_info *spt_find_mmap_info(struct supplemental_page_table *spt,
+                                     void *addr);
 
 void vm_init(void);
 bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
@@ -115,6 +125,9 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage,
 void vm_dealloc_page(struct page *page);
 bool vm_claim_page(void *va);
 enum vm_type page_get_type(struct page *page);
+
+bool pin_page(void *addr);
+bool unpin_page(void *addr);
 
 struct lazy_load_args {
   struct file *file;

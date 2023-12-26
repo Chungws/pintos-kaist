@@ -239,8 +239,9 @@ static void __do_fork(void *aux) {
   pd->stdin_count = parent->proc_desc->stdin_count;
   pd->stdout_count = parent->proc_desc->stdout_count;
 
-  lock_acquire(&filesys_lock);
+  filesys_lock_acquire();
   current->running_file = file_duplicate(parent->running_file);
+  filesys_lock_release();
 
   struct hash_iterator i;
   hash_first(&i, &parent->proc_desc->file_desc_table);
@@ -274,12 +275,13 @@ static void __do_fork(void *aux) {
         }
       }
       if (!found) {
+        filesys_lock_acquire();
         new_f_desc->file = file_duplicate(parent_file);
+        filesys_lock_release();
       }
     }
     hash_insert(&pd->file_desc_table, &new_f_desc->hash_elem);
   }
-  lock_release(&filesys_lock);
 
   current->proc_desc = pd;
 
@@ -355,18 +357,12 @@ int process_exec(void *f_name) {
 
   struct thread *curr = thread_current();
 
-  if (curr->running_file != NULL) {
-    lock_acquire(&filesys_lock);
-    file_allow_write(curr->running_file);
-    file_close(curr->running_file);
-    curr->running_file = NULL;
-    lock_release(&filesys_lock);
-  }
-
   /* Project 2 : argument passing */
 
   /* And then load the binary */
+  filesys_lock_acquire();
   success = load(file_name, &_if);
+  filesys_lock_release();
 
   // hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
   /* Project 2 : argument passing */
@@ -419,17 +415,7 @@ void process_exit(void) {
    * TODO: Implement process termination message (see
    * TODO: project2/process_termination.html).
    * TODO: We recommend you to implement process resource cleanup here. */
-  if (filesys_lock.holder == curr) {
-    lock_release(&filesys_lock);
-  }
-
-  if (curr->running_file != NULL) {
-    lock_acquire(&filesys_lock);
-    file_allow_write(curr->running_file);
-    file_close(curr->running_file);
-    curr->running_file = NULL;
-    lock_release(&filesys_lock);
-  }
+  filesys_lock_release();
 
   struct list_elem *e = list_begin(&curr->child_list);
   struct process_desc *pd;
@@ -446,9 +432,9 @@ void process_exit(void) {
 
   struct process_desc *proc_desc = curr->proc_desc;
   if (proc_desc != NULL) {
-    lock_acquire(&filesys_lock);
+    filesys_lock_acquire();
     hash_destroy(&proc_desc->file_desc_table, &file_desc_table_hash_destructor);
-    lock_release(&filesys_lock);
+    filesys_lock_release();
     proc_desc->is_terminated = true;
 
     printf("%s: exit(%d)\n", curr->name, proc_desc->exit_status);
@@ -472,6 +458,10 @@ static void process_cleanup(void) {
 #ifdef VM
   supplemental_page_table_kill(&curr->spt);
 #endif
+  if (curr->running_file != NULL) {
+    file_close(curr->running_file);
+    curr->running_file = NULL;
+  }
 
   uint64_t *pml4;
   /* Destroy the current process's page directory and switch back
@@ -582,7 +572,6 @@ static bool load(const char *cmd_line, struct intr_frame *if_) {
     argc++;
   }
 
-  lock_acquire(&filesys_lock);
   /* Allocate and activate page directory. */
   t->pml4 = pml4_create();
   if (t->pml4 == NULL) goto done;
@@ -667,7 +656,6 @@ static bool load(const char *cmd_line, struct intr_frame *if_) {
   file_deny_write(file);
   t->running_file = file;
   success = true;
-  lock_release(&filesys_lock);
 
   /* Set arguments in user stack */
   argument_stack(argc, argv, if_);
@@ -677,7 +665,6 @@ static bool load(const char *cmd_line, struct intr_frame *if_) {
 done:
   /* We arrive here whether the load is successful or not. */
   file_close(file);
-  lock_release(&filesys_lock);
   return success;
 }
 
@@ -828,13 +815,16 @@ bool lazy_load_segment(struct page *page, void *aux) {
   off_t ofs = args->ofs;
   void *kpage = page->frame->kva;
 
-  file_seek(file, ofs);
-
-  if (file_read(file, kpage, page_read_bytes) != (int)page_read_bytes) {
-    free(kpage);
+  if (file == NULL) {
     return false;
   }
+  if (page_read_bytes > 0) {
+    filesys_lock_acquire();
+    file_read_at(file, kpage, page_read_bytes, ofs);
+    filesys_lock_release();
+  }
   memset(kpage + page_read_bytes, 0, page_zero_bytes);
+  free(aux);
   return true;
 }
 
@@ -869,13 +859,14 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage,
     /* TODO: Set up aux to pass information to the lazy_load_segment. */
     struct lazy_load_args *args =
         (struct lazy_load_args *)calloc(1, sizeof(struct lazy_load_args));
-    args->file = file;
+    args->file = file_reopen(file);
     args->page_read_bytes = page_read_bytes;
     args->page_zero_bytes = page_zero_bytes;
     args->ofs = ofs;
 
     if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable,
                                         lazy_load_segment, (void *)args)) {
+      file_close(args->file);
       free(args);
       return false;
     }
@@ -925,9 +916,17 @@ struct process_desc *find_child_desc(tid_t tid) {
 }
 
 /* filesys_lock related functions. */
-void filesys_lock_acquire(void) { lock_acquire(&filesys_lock); }
+void filesys_lock_acquire(void) {
+  if (!lock_held_by_current_thread(&filesys_lock)) {
+    lock_acquire(&filesys_lock);
+  }
+}
 
-void filesys_lock_release(void) { lock_release(&filesys_lock); }
+void filesys_lock_release(void) {
+  if (lock_held_by_current_thread(&filesys_lock)) {
+    lock_release(&filesys_lock);
+  }
+}
 
 /* process_desc related functions. */
 struct process_desc *proc_desc_create(void) {
@@ -983,7 +982,6 @@ struct file_desc *file_desc_create(int fd, struct file *f) {
 
 void file_desc_destroy(struct file_desc *desc) {
   ASSERT(desc != NULL);
-  ASSERT(filesys_lock.holder == thread_current());
   if (desc->file != STDIN_FD && desc->file != STDOUT_FD) {
     file_close(desc->file);
   }
