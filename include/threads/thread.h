@@ -37,19 +37,6 @@ typedef int tid_t;
 #define NICE_MAX 20
 /* Project 1 : mlfqs */
 
-// struct process_desc {
-//   tid_t pid;
-//   int exit_status;
-//   bool is_terminated;
-//   struct semaphore wait_sema;
-//   struct semaphore fork_sema;
-//   struct intr_frame parent_tf;
-//   struct hash file_desc_table;
-//   int stdin_count;
-//   int stdout_count;
-//   struct list_elem child_elem;
-// };
-
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The

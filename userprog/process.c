@@ -351,10 +351,6 @@ int process_exec(void *f_name) {
 
   struct thread *curr = thread_current();
 
-  // if (filesys_lock.holder == curr) {
-  //   lock_release(&filesys_lock);
-  // }
-
   if (curr->running_file != NULL) {
     lock_acquire(&filesys_lock);
     file_allow_write(curr->running_file);
@@ -368,7 +364,6 @@ int process_exec(void *f_name) {
   /* And then load the binary */
   success = load(file_name, &_if);
 
-  // hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
   /* Project 2 : argument passing */
 
   /* If load failed, quit. */
@@ -1004,7 +999,6 @@ struct file *file_desc_table_find_file(struct hash *h, int fd) {
 
 bool file_desc_table_insert(struct hash *h, struct file_desc *desc) {
   struct hash_elem *e = hash_insert(h, &desc->hash_elem);
-  // same fd file_desc is exist
   if (e != NULL) {
     return false;
   }
