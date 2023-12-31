@@ -34,6 +34,12 @@ void sys_seek(int fd, unsigned position);
 unsigned sys_tell(int fd);
 void sys_close(int fd);
 int sys_dup2(int oldfd, int newfd);
+bool sys_chdir(const char *dir);
+bool sys_mkdir(const char *dir);
+bool sys_readdir(int fd, char *name);
+bool sys_isdir(int fd);
+int sys_inumber(int fd);
+int sys_symlink(const char *target, const char *linkpath);
 void validate_address(void *addr);
 
 /* System call.
@@ -117,6 +123,24 @@ void syscall_handler(struct intr_frame *f) {
       break;
     case SYS_DUP2:
       f->R.rax = (uint64_t)sys_dup2((int)arg1, (int)arg2);
+      break;
+    case SYS_CHDIR:
+      f->R.rax = (uint64_t)sys_chdir((const char *)arg1);
+      break;
+    case SYS_MKDIR:
+      f->R.rax = (uint64_t)sys_mkdir((const char *)arg1);
+      break;
+    case SYS_READDIR:
+      f->R.rax = (uint64_t)sys_readdir((int)arg1, (char *)arg2);
+      break;
+    case SYS_ISDIR:
+      f->R.rax = (uint64_t)sys_isdir((int)arg1);
+      break;
+    case SYS_INUMBER:
+      f->R.rax = (uint64_t)sys_inumber((int)arg1);
+      break;
+    case SYS_SYMLINK:
+      f->R.rax = (uint64_t)sys_symlink((const char *)arg1, (const char *)arg2);
       break;
     default:
       printf("Not implemented system call\n");
@@ -373,6 +397,18 @@ int sys_dup2(int oldfd, int newfd) {
   filesys_lock_release();
   return newfd;
 }
+
+bool sys_chdir(const char *dir) {}
+
+bool sys_mkdir(const char *dir) {}
+
+bool sys_readdir(int fd, char *name) {}
+
+bool sys_isdir(int fd) {}
+
+int sys_inumber(int fd) {}
+
+int sys_symlink(const char *target, const char *linkpath) {}
 
 void validate_address(void *addr) {
   if (addr == NULL || !is_user_vaddr(addr)) {
