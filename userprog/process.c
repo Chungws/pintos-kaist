@@ -241,6 +241,7 @@ static void __do_fork(void *aux) {
 
   lock_acquire(&filesys_lock);
   current->running_file = file_duplicate(parent->running_file);
+  current->cur_dir = file_reopen(parent->cur_dir);
 
   struct hash_iterator i;
   hash_first(&i, &parent->proc_desc->file_desc_table);
@@ -420,7 +421,6 @@ void process_exit(void) {
 
   if (curr->running_file != NULL) {
     lock_acquire(&filesys_lock);
-    file_allow_write(curr->running_file);
     file_close(curr->running_file);
     curr->running_file = NULL;
     lock_release(&filesys_lock);

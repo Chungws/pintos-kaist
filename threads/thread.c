@@ -744,6 +744,9 @@ static void init_thread(struct thread *t, const char *name, int priority) {
   t->running_file = NULL;
   t->proc_desc = NULL;
 #endif
+#ifdef EFILESYS
+  t->cur_dir = NULL;
+#endif
   t->magic = THREAD_MAGIC;
 }
 

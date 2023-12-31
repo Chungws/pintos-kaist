@@ -12,6 +12,9 @@
 #ifdef VM
 #include "vm/vm.h"
 #endif
+#ifdef EFILESYS
+#include "filesys/directory.h"
+#endif
 
 /* States in a thread's life cycle. */
 enum thread_status {
@@ -131,6 +134,9 @@ struct thread {
 #ifdef VM
   /* Table for whole virtual memory owned by thread. */
   struct supplemental_page_table spt;
+#endif
+#ifdef EFILESYS
+  struct dir *cur_dir;
 #endif
 
   /* Owned by thread.c. */
