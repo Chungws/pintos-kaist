@@ -121,6 +121,7 @@ static void initd(void *_initd_args) {
 
   process_init();
   curr->proc_desc = pd;
+  curr->cur_dir = dir_open_root();
   sema_up(&curr->proc_desc->fork_sema);
 
   if (process_exec(args->file_name) < 0) PANIC("Fail to launch initd\n");
@@ -241,7 +242,7 @@ static void __do_fork(void *aux) {
 
   lock_acquire(&filesys_lock);
   current->running_file = file_duplicate(parent->running_file);
-  current->cur_dir = file_reopen(parent->cur_dir);
+  current->cur_dir = dir_reopen(parent->cur_dir);
 
   struct hash_iterator i;
   hash_first(&i, &parent->proc_desc->file_desc_table);

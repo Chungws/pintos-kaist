@@ -9,6 +9,8 @@
 #include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
+#include "threads/malloc.h"
+#include "threads/thread.h"
 
 /* The disk that contains the file system. */
 struct disk *filesys_disk;
@@ -57,12 +59,15 @@ void filesys_done(void) {
  * or if internal memory allocation fails. */
 bool filesys_create(const char *name, off_t initial_size) {
   disk_sector_t inode_sector = 0;
-  // TODO : handle is_dir
-  is_dir_t is_dir = 0;
-  struct dir *dir = dir_open_root();
-  bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
-                  inode_create(inode_sector, initial_size, is_dir) &&
-                  dir_add(dir, name, inode_sector));
+  struct dir *dir = NULL;
+
+  bool success = false;
+  if (open_parent_dir(name, thread_current()->cur_dir, &dir)) {
+    success = true;
+  }
+  success = (success && dir != NULL && free_map_allocate(1, &inode_sector) &&
+             inode_create(inode_sector, initial_size, (is_dir_t)0) &&
+             dir_add(dir, name, inode_sector));
   if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
   dir_close(dir);
 
@@ -111,4 +116,58 @@ static void do_format(void) {
 #endif
 
   printf("done.\n");
+}
+
+bool open_parent_dir(const char *path, struct dir *cur_dir,
+                     struct dir **parent_dir) {
+  if (path == NULL || strlen(path) == 0) {
+    return false;
+  }
+
+  struct dir *dir = NULL;
+  if (path[0] == "/") {
+    dir = dir_open_root();
+  } else if (cur_dir != NULL) {
+    dir = dir_reopen(cur_dir);
+  } else {
+    return false;
+  }
+
+  char *last = strrchr(path, "/");
+  size_t parent_path_strlen = strlen(path) - strlen(last);
+
+  char *cp_parent_path,
+      start = (char *)calloc(sizeof(char), parent_path_strlen + 1);
+  strlcpy(cp_parent_path, path, parent_path_strlen + 1);
+  cp_parent_path[parent_path_strlen] = "\0";
+
+  struct inode *inode = NULL;
+  char *token, *save_ptr;
+
+  bool success = false;
+
+  for (token = strtok_r(cp_parent_path, "/", &save_ptr); token != NULL;
+       token = strtok_r(NULL, "/", &save_ptr)) {
+    if (!dir_lookup(dir, token, &inode)) {
+      dir_close(dir);
+      success = false;
+      goto done;
+    }
+
+    dir_close(dir);
+    // normal file, path is wrong
+    if (inode_is_dir(inode) == (is_dir_t)0) {
+      inode_close(inode);
+      success = false;
+      goto done;
+    }
+
+    dir = dir_open(inode);
+  }
+  *parent_dir = dir;
+  success = true;
+
+done:
+  free(start);
+  return success;
 }
