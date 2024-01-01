@@ -61,13 +61,18 @@ bool filesys_create(const char *name, off_t initial_size) {
   disk_sector_t inode_sector = 0;
   struct dir *dir = NULL;
 
+  char *filename = get_filename(name);
+  if (filename == NULL) {
+    return false;
+  }
+
   bool success = false;
   if (open_parent_dir(name, thread_current()->cur_dir, &dir)) {
     success = true;
   }
   success = (success && dir != NULL && free_map_allocate(1, &inode_sector) &&
              inode_create(inode_sector, initial_size, (is_dir_t)0) &&
-             dir_add(dir, name, inode_sector));
+             dir_add(dir, filename, inode_sector));
   if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
   dir_close(dir);
 
@@ -116,6 +121,19 @@ static void do_format(void) {
 #endif
 
   printf("done.\n");
+}
+
+char *get_filename(const char *path) {
+  if (path == NULL || strlen(path) == 0) {
+    return NULL;
+  }
+
+  char *filename = strrchr(path, "/");
+  if (filename == NULL) {
+    filename = path;
+    return filename;
+  }
+  return filename + 1;  // for "/"
 }
 
 bool open_parent_dir(const char *path, struct dir *cur_dir,

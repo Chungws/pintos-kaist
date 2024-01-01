@@ -20,5 +20,6 @@ bool filesys_remove(const char *name);
 
 bool open_parent_dir(const char *path, struct dir *cur_dir,
                      struct dir **parent_dir);
+char *get_filename(const char *path);
 
 #endif /* filesys/filesys.h */
