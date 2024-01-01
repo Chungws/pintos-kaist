@@ -121,7 +121,9 @@ static void initd(void *_initd_args) {
 
   process_init();
   curr->proc_desc = pd;
+#ifdef EFILESYS
   curr->cur_dir = dir_open_root();
+#endif
   sema_up(&curr->proc_desc->fork_sema);
 
   if (process_exec(args->file_name) < 0) PANIC("Fail to launch initd\n");
@@ -242,7 +244,9 @@ static void __do_fork(void *aux) {
 
   lock_acquire(&filesys_lock);
   current->running_file = file_duplicate(parent->running_file);
+#ifdef EFILESYS
   current->cur_dir = dir_reopen(parent->cur_dir);
+#endif
 
   struct hash_iterator i;
   hash_first(&i, &parent->proc_desc->file_desc_table);
@@ -426,6 +430,15 @@ void process_exit(void) {
     curr->running_file = NULL;
     lock_release(&filesys_lock);
   }
+
+#ifdef EFILESYS
+  if (curr->cur_dir != NULL) {
+    lock_acquire(&filesys_lock);
+    dir_close(curr->cur_dir);
+    curr->cur_dir = NULL;
+    lock_release(&filesys_lock);
+  }
+#endif
 
   struct list_elem *e = list_begin(&curr->child_list);
   struct process_desc *pd;
