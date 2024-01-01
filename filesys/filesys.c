@@ -175,6 +175,40 @@ static void do_format(void) {
   printf("done.\n");
 }
 
+bool filesys_create_dir(const char *name) {
+  bool success = false;
+  disk_sector_t inode_sector = 0;
+  struct dir *parent_dir = NULL;
+
+  char *new_dirname = get_filename(name);
+  if (new_dirname == NULL) {
+    return false;
+  }
+
+  struct inode *inode = NULL;
+  if (open_parent_dir(name, thread_current()->cur_dir, &parent_dir) &&
+      parent_dir != NULL && !dir_lookup(parent_dir, new_dirname, &inode)) {
+    success = true;
+  }
+  success &= (free_map_allocate(1, &inode_sector) &&
+              dir_create(inode_sector, DIR_ENTRY_MAX) &&
+              dir_add(parent_dir, new_dirname, inode_sector) &&
+              dir_lookup(parent_dir, new_dirname, &inode));
+
+  if (success) {
+    struct dir *new_dir = dir_open(inode);
+    success &=
+        (dir_add(new_dir, ".", inode_sector) &&
+         dir_add(new_dir, "..", inode_get_inumber(dir_get_inode(parent_dir))));
+    dir_close(new_dir);
+  }
+
+  if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
+  dir_close(parent_dir);
+
+  return success;
+}
+
 char *get_filename(const char *path) {
   if (path == NULL || strlen(path) == 0) {
     return NULL;

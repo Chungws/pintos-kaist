@@ -12,6 +12,8 @@
  * retained, but much longer full path names must be allowed. */
 #define NAME_MAX 14
 
+#define DIR_ENTRY_MAX 16
+
 struct inode;
 
 /* Opening and closing directories. */

@@ -403,7 +403,12 @@ int sys_dup2(int oldfd, int newfd) {
 
 bool sys_chdir(const char *dir) {}
 
-bool sys_mkdir(const char *dir) {}
+bool sys_mkdir(const char *dir) {
+  filesys_lock_acquire();
+  bool success = filesys_create_dir(dir);
+  filesys_lock_release();
+  return success;
+}
 
 bool sys_readdir(int fd, char *name) {
   bool success = false;
