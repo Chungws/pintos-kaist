@@ -7,6 +7,7 @@
 #include "devices/input.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 #include "intrinsic.h"
 #include "threads/flags.h"
 #include "threads/init.h"
@@ -404,9 +405,42 @@ bool sys_mkdir(const char *dir) {}
 
 bool sys_readdir(int fd, char *name) {}
 
-bool sys_isdir(int fd) {}
+bool sys_isdir(int fd) {
+  struct thread *cur = thread_current();
+  struct process_desc *pd = cur->proc_desc;
 
-int sys_inumber(int fd) {}
+  filesys_lock_acquire();
+  struct file *f = file_desc_table_find_file(&pd->file_desc_table, fd);
+  if (f == NULL) {
+    filesys_lock_release();
+    return false;
+  }
+  bool is_dir = false;
+  if (inode_is_dir(file_get_inode(f)) == (is_dir_t)1) {
+    is_dir = true;
+  }
+  filesys_lock_release();
+
+  return is_dir;
+}
+
+int sys_inumber(int fd) {
+  struct thread *cur = thread_current();
+  struct process_desc *pd = cur->proc_desc;
+  int inumber = -1;
+
+  filesys_lock_acquire();
+  struct file *f = file_desc_table_find_file(&pd->file_desc_table, fd);
+
+  if (f == NULL) {
+    filesys_lock_release();
+    return inumber;
+  }
+
+  inumber = (int)inode_get_inumber(file_get_inode(f));
+  filesys_lock_release();
+  return inumber;
+}
 
 int sys_symlink(const char *target, const char *linkpath) {}
 
