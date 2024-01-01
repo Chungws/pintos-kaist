@@ -131,14 +131,31 @@ bool filesys_remove(const char *name) {
   if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
     return false;
   }
-  bool success = dir != NULL && dir_remove(dir, filename);
-#else
-  struct dir *dir = dir_open_root();
-  bool success = dir != NULL && dir_remove(dir, name);
-#endif
+  bool success = false;
+  struct inode *inode = NULL;
+  if (dir != NULL && dir_lookup(dir, filename, &inode)) {
+    if (inode_is_dir(inode) == (is_dir_t)0) {  // case for normal file
+      success = dir_remove(dir, filename);
+    } else {  // case for directory
+      struct dir *victim = dir_open(inode);
+      if (dir_is_empty(victim) &&
+          !dir_is_same(thread_current()->cur_dir, victim)) {
+        success = dir_remove(dir, filename);
+      }
+      dir_close(victim);
+    }
+    inode_close(inode);
+  }
   dir_close(dir);
 
   return success;
+#else
+  struct dir *dir = dir_open_root();
+  bool success = dir != NULL && dir_remove(dir, name);
+  dir_close(dir);
+
+  return success;
+#endif
 }
 
 /* Formats the file system. */

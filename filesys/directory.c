@@ -195,3 +195,22 @@ bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
   }
   return false;
 }
+
+bool dir_is_empty(struct dir *dir) {
+  char *tmp = (char *)malloc(NAME_MAX + 1);
+  struct dir *tmp_dir = dir_reopen(dir);
+  dir_readdir(tmp_dir, tmp);  // case for "."
+  dir_readdir(tmp_dir, tmp);  // case for ".."
+
+  bool success = false;
+  if (!dir_readdir(tmp_dir, tmp)) {
+    success = true;
+  }
+  free(tmp);
+  dir_close(tmp_dir);
+  return success;
+}
+
+bool dir_is_same(struct dir *dir1, struct dir *dir2) {
+  return inode_get_inumber(dir1->inode) != inode_get_inumber(dir2->inode);
+}
