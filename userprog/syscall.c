@@ -17,6 +17,8 @@
 #include "userprog/gdt.h"
 #include "userprog/process.h"
 
+#define READDIR_MAX_LEN 14
+
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
 
@@ -403,19 +405,58 @@ bool sys_chdir(const char *dir) {}
 
 bool sys_mkdir(const char *dir) {}
 
-bool sys_readdir(int fd, char *name) {}
-
-bool sys_isdir(int fd) {
+bool sys_readdir(int fd, char *name) {
+  bool success = false;
+  if (name == NULL) {
+    return success;
+  }
   struct thread *cur = thread_current();
   struct process_desc *pd = cur->proc_desc;
 
   filesys_lock_acquire();
   struct file *f = file_desc_table_find_file(&pd->file_desc_table, fd);
-  if (f == NULL) {
-    filesys_lock_release();
-    return false;
+  if (f == NULL || f == STDIN_FD || f == STDOUT_FD) {
+    goto done;
   }
+
+  if (inode_is_dir(file_get_inode(f)) == (is_dir_t)1) {
+    goto done;
+  }
+
+  struct dir *dir = dir_open(file_get_inode(f));
+  if (dir == NULL) {
+    goto done;
+  }
+  char *tmp = (char *)calloc(sizeof(char), READDIR_MAX_LEN + 1);
+  if (tmp == NULL) {
+    dir_close(tmp);
+    goto done;
+  }
+
+  dir_readdir(dir, tmp);  // case for "."
+  dir_readdir(dir, tmp);  // case for ".."
+  success = dir_readdir(dir, name);
+
+  free(tmp);
+  dir_close(dir);
+
+done:
+  filesys_lock_release();
+  return success;
+}
+
+bool sys_isdir(int fd) {
+  struct thread *cur = thread_current();
+  struct process_desc *pd = cur->proc_desc;
   bool is_dir = false;
+
+  filesys_lock_acquire();
+  struct file *f = file_desc_table_find_file(&pd->file_desc_table, fd);
+  if (f == NULL || f == STDIN_FD || f == STDOUT_FD) {
+    filesys_lock_release();
+    return is_dir;
+  }
+
   if (inode_is_dir(file_get_inode(f)) == (is_dir_t)1) {
     is_dir = true;
   }
@@ -432,7 +473,7 @@ int sys_inumber(int fd) {
   filesys_lock_acquire();
   struct file *f = file_desc_table_find_file(&pd->file_desc_table, fd);
 
-  if (f == NULL) {
+  if (f == NULL || f == STDIN_FD || f == STDOUT_FD) {
     filesys_lock_release();
     return inumber;
   }
