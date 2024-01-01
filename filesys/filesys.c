@@ -59,6 +59,7 @@ void filesys_done(void) {
  * or if internal memory allocation fails. */
 bool filesys_create(const char *name, off_t initial_size) {
   disk_sector_t inode_sector = 0;
+#ifdef EFILESYS
   struct dir *dir = NULL;
 
   char *filename = get_filename(name);
@@ -66,13 +67,19 @@ bool filesys_create(const char *name, off_t initial_size) {
     return false;
   }
 
-  bool success = false;
-  if (open_parent_dir(name, thread_current()->cur_dir, &dir)) {
-    success = true;
+  bool success = true;
+  if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
+    success = false;
   }
   success = (success && dir != NULL && free_map_allocate(1, &inode_sector) &&
              inode_create(inode_sector, initial_size, (is_dir_t)0) &&
              dir_add(dir, filename, inode_sector));
+#else
+  struct dir *dir = dir_open_root();
+  bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
+                  inode_create(inode_sector, initial_size, (is_dir_t)0) &&
+                  dir_add(dir, name, inode_sector));
+#endif
   if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
   dir_close(dir);
 
@@ -85,10 +92,25 @@ bool filesys_create(const char *name, off_t initial_size) {
  * Fails if no file named NAME exists,
  * or if an internal memory allocation fails. */
 struct file *filesys_open(const char *name) {
+#ifdef EFILESYS
+  char *filename = get_filename(name);
+  if (filename == NULL) {
+    return NULL;
+  }
+
+  struct dir *dir = NULL;
+  if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
+    return NULL;
+  }
+
+  struct inode *inode = NULL;
+  if (dir != NULL) dir_lookup(dir, filename, &inode);
+#else
   struct dir *dir = dir_open_root();
   struct inode *inode = NULL;
 
   if (dir != NULL) dir_lookup(dir, name, &inode);
+#endif
   dir_close(dir);
 
   return file_open(inode);
@@ -99,8 +121,21 @@ struct file *filesys_open(const char *name) {
  * Fails if no file named NAME exists,
  * or if an internal memory allocation fails. */
 bool filesys_remove(const char *name) {
+#ifdef EFILESYS
+  char *filename = get_filename(name);
+  if (filename == NULL) {
+    return false;
+  }
+
+  struct dir *dir = NULL;
+  if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
+    return false;
+  }
+  bool success = dir != NULL && dir_remove(dir, filename);
+#else
   struct dir *dir = dir_open_root();
   bool success = dir != NULL && dir_remove(dir, name);
+#endif
   dir_close(dir);
 
   return success;
