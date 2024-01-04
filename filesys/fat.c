@@ -16,6 +16,7 @@ struct fat_boot {
   unsigned int fat_start;
   unsigned int fat_sectors; /* Size of FAT in sectors. */
   unsigned int root_dir_cluster;
+  unsigned int free_head;
 };
 
 /* FAT FS */
@@ -26,12 +27,14 @@ struct fat_fs {
   disk_sector_t data_start;
   cluster_t last_clst;
   struct lock write_lock;
+  unsigned int free_head;
 };
 
 static struct fat_fs *fat_fs;
 
 void fat_boot_create(void);
 void fat_fs_init(void);
+void fat_link_init(void);
 
 void fat_init(void) {
   fat_fs = calloc(1, sizeof(struct fat_fs));
@@ -82,6 +85,8 @@ void fat_close(void) {
   disk_write(filesys_disk, FAT_BOOT_SECTOR, bounce);
   free(bounce);
 
+  fat_fs->bs.free_head = fat_fs->free_head;
+
   // Write FAT directly to the disk
   uint8_t *buffer = (uint8_t *)fat_fs->fat;
   off_t bytes_wrote = 0;
@@ -120,6 +125,7 @@ void fat_create(void) {
   if (buf == NULL) PANIC("FAT create failed due to OOM");
   disk_write(filesys_disk, cluster_to_sector(ROOT_DIR_CLUSTER), buf);
   free(buf);
+  fat_link_init();
 }
 
 void fat_boot_create(void) {
@@ -137,34 +143,104 @@ void fat_boot_create(void) {
   };
 }
 
-void fat_fs_init(void) { /* TODO: Your code goes here. */
+void fat_fs_init(void) {
+  fat_fs->fat_length = sector_to_cluster(fat_fs->bs.total_sectors);
+  fat_fs->data_start =
+      sector_to_cluster(fat_fs->bs.fat_start + fat_fs->bs.fat_sectors);
+  fat_fs->last_clst =
+      sector_to_cluster(fat_fs->bs.total_sectors - SECTORS_PER_CLUSTER);
+  fat_fs->free_head = fat_fs->bs.free_head;
+  lock_init(&fat_fs->write_lock);
+}
+
+void fat_link_init(void) {
+  cluster_t tail;
+
+  fat_fs->free_head = fat_fs->data_start;
+  tail = fat_fs->data_start;
+  for (int i = fat_fs->data_start + 1; i <= fat_fs->last_clst; ++i) {
+    fat_put(tail, i);
+    tail = i;
+  }
+  if (tail) {
+    fat_put(tail, EOChain);
+  }
 }
 
 /*----------------------------------------------------------------------------*/
 /* FAT handling                                                               */
 /*----------------------------------------------------------------------------*/
 
+cluster_t fat_get_free(void) {
+  cluster_t ret;
+  if (fat_fs->free_head == EOChain) {
+    return 0;
+  }
+  ret = fat_fs->free_head;
+  fat_fs->free_head = fat_get(fat_fs->free_head);
+  fat_put(ret, EOChain);
+  return ret;
+}
+
 /* Add a cluster to the chain.
  * If CLST is 0, start a new chain.
  * Returns 0 if fails to allocate a new cluster. */
-cluster_t fat_create_chain(cluster_t clst) { /* TODO: Your code goes here. */
+cluster_t fat_create_chain(cluster_t clst) {
+  cluster_t new;
+
+  lock_acquire(&fat_fs->write_lock);
+  new = fat_get_free();
+  if (new == 0) {
+    lock_release(&fat_fs->write_lock);
+    return 0;
+  }
+
+  if (clst == 0) {
+    fat_put(new, EOChain);
+  } else if (fat_get(clst) == 0) {
+    fat_put(new, EOChain);
+    fat_put(clst, new);
+  } else {
+    fat_put(new, fat_get(clst));
+    fat_put(clst, new);
+  }
+  lock_release(&fat_fs->write_lock);
+  return new;
 }
 
 /* Remove the chain of clusters starting from CLST.
  * If PCLST is 0, assume CLST as the start of the chain. */
 void fat_remove_chain(cluster_t clst, cluster_t pclst) {
-  /* TODO: Your code goes here. */
+  cluster_t cur = clst;
+  cluster_t next;
+
+  lock_acquire(&fat_fs->write_lock);
+  while (cur != EOChain) {
+    next = fat_get(cur);
+    fat_put(cur, fat_fs->free_head);
+    fat_fs->free_head = cur;
+    cur = next;
+  }
+
+  if (pclst != 0) {
+    fat_put(pclst, fat_fs->free_head);
+    fat_fs->free_head = pclst;
+  }
+  lock_release(&fat_fs->write_lock);
 }
 
 /* Update a value in the FAT table. */
-void fat_put(cluster_t clst, cluster_t val) { /* TODO: Your code goes here. */
-}
+void fat_put(cluster_t clst, cluster_t val) { fat_fs->fat[clst] = val; }
 
 /* Fetch a value in the FAT table. */
-cluster_t fat_get(cluster_t clst) { /* TODO: Your code goes here. */
-}
+cluster_t fat_get(cluster_t clst) { return fat_fs->fat[clst]; }
 
 /* Covert a cluster # to a sector number. */
 disk_sector_t cluster_to_sector(cluster_t clst) {
-  /* TODO: Your code goes here. */
+  return (disk_sector_t)clst * SECTORS_PER_CLUSTER;
+}
+
+cluster_t sector_to_cluster(disk_sector_t sector) {
+  return (cluster_t)sector / SECTORS_PER_CLUSTER +
+         (sector % SECTORS_PER_CLUSTER);
 }

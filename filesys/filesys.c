@@ -214,7 +214,7 @@ char *get_filename(const char *path) {
     return NULL;
   }
 
-  char *filename = strrchr(path, "/");
+  char *filename = strrchr(path, '/');
   if (filename == NULL) {
     filename = path;
     return filename;
@@ -229,7 +229,7 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
   }
 
   struct dir *dir = NULL;
-  if (path[0] == "/") {
+  if (path[0] == '/') {
     dir = dir_open_root();
   } else if (cur_dir != NULL) {
     dir = dir_reopen(cur_dir);
@@ -237,13 +237,13 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
     return false;
   }
 
-  char *last = strrchr(path, "/");
+  char *last = strrchr(path, '/');
   size_t parent_path_strlen = strlen(path) - strlen(last);
 
   char *cp_parent_path,
-      start = (char *)calloc(sizeof(char), parent_path_strlen + 1);
+      *start = (char *)calloc(sizeof(char), parent_path_strlen + 1);
   strlcpy(cp_parent_path, path, parent_path_strlen + 1);
-  cp_parent_path[parent_path_strlen] = "\0";
+  cp_parent_path[parent_path_strlen] = '\0';
 
   struct inode *inode = NULL;
   char *token, *save_ptr;
