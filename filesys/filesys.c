@@ -167,8 +167,10 @@ static void do_format(void) {
   fat_create();
   if (!dir_create(ROOT_DIR_SECTOR, 16)) PANIC("root directory creation failed");
   struct dir *root_dir = dir_open_root();
-  dir_add(root_dir, ".", ROOT_DIR_SECTOR);
-  dir_add(root_dir, "..", ROOT_DIR_SECTOR);
+  if (dir_add(root_dir, ".", ROOT_DIR_SECTOR) &&
+      dir_add(root_dir, "..", ROOT_DIR_SECTOR)) {
+    PANIC("root directory's relative directory creation failed");
+  }
   dir_close(root_dir);
   fat_close();
 #else
