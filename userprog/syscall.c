@@ -401,9 +401,16 @@ int sys_dup2(int oldfd, int newfd) {
   return newfd;
 }
 
-bool sys_chdir(const char *dir) {}
+bool sys_chdir(const char *dir) {
+  validate_address(dir);
+  filesys_lock_acquire();
+  bool success = filesys_change_dir(dir);
+  filesys_lock_release();
+  return success;
+}
 
 bool sys_mkdir(const char *dir) {
+  validate_address(dir);
   filesys_lock_acquire();
   bool success = filesys_create_dir(dir);
   filesys_lock_release();

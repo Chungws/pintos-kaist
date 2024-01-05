@@ -175,6 +175,32 @@ static void do_format(void) {
   printf("done.\n");
 }
 
+bool filesys_change_dir(const char *name) {
+  if (name == NULL || strlen(name) == 0) {
+    return false;
+  }
+
+  char *last_dirname = get_filename(name);
+  if (last_dirname == NULL) {
+    return false;
+  }
+
+  struct dir *cur_dir = thread_current()->cur_dir;
+  struct dir *dir = NULL;
+  struct inode *inode = NULL;
+  if (open_parent_dir(name, cur_dir, &dir) && dir != NULL &&
+      dir_lookup(dir, last_dirname, &inode)) {
+    dir_close(dir);
+    dir = dir_open(inode);
+    if (cur_dir != NULL) {
+      dir_close(cur_dir);
+    }
+    thread_current()->cur_dir = dir;
+    return true;
+  }
+  return false;
+}
+
 bool filesys_create_dir(const char *name) {
   bool success = false;
   disk_sector_t inode_sector = 0;
