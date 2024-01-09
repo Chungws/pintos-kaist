@@ -431,7 +431,7 @@ bool sys_readdir(int fd, char *name) {
     goto done;
   }
 
-  if (inode_is_dir(file_get_inode(f)) == (is_dir_t)1) {
+  if (inode_file_type(file_get_inode(f)) == (file_type_t)1) {
     goto done;
   }
 
@@ -469,7 +469,7 @@ bool sys_isdir(int fd) {
     return is_dir;
   }
 
-  if (inode_is_dir(file_get_inode(f)) == (is_dir_t)1) {
+  if (inode_file_type(file_get_inode(f)) == (file_type_t)1) {
     is_dir = true;
   }
   filesys_lock_release();
@@ -495,7 +495,15 @@ int sys_inumber(int fd) {
   return inumber;
 }
 
-int sys_symlink(const char *target, const char *linkpath) {}
+// return zero for success, -1 for failed
+int sys_symlink(const char *target, const char *linkpath) {
+  validate_address(target);
+  validate_address(linkpath);
+  filesys_lock_acquire();
+  int result = filesys_create_symlink(target, linkpath);
+  filesys_lock_release();
+  return result;
+}
 
 void validate_address(void *addr) {
   if (addr == NULL || !is_user_vaddr(addr)) {

@@ -21,11 +21,22 @@ struct dir_entry {
   bool in_use;                /* In use or free? */
 };
 
+struct symlink {
+  struct inode *inode;
+  char *path;
+  struct dir *start_dir;
+};
+
+struct symlink_entry {
+  disk_sector_t start_dir_sector;
+  char path[NAME_MAX + 1];
+};
+
 /* Creates a directory with space for ENTRY_CNT entries in the
  * given SECTOR.  Returns true if successful, false on failure. */
 bool dir_create(disk_sector_t sector, size_t entry_cnt) {
   return inode_create(sector, entry_cnt * sizeof(struct dir_entry),
-                      (is_dir_t)1);
+                      (file_type_t)1);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -214,3 +225,40 @@ bool dir_is_empty(struct dir *dir) {
 bool dir_is_same(struct dir *dir1, struct dir *dir2) {
   return inode_get_inumber(dir1->inode) != inode_get_inumber(dir2->inode);
 }
+
+bool symlink_create(disk_sector_t sector, const char *path,
+                    disk_sector_t start_dir_sector) {
+  struct symlink_entry e;
+  bool success = false;
+  if (inode_create(sector, sizeof(struct symlink_entry), (file_type_t)2)) {
+    struct inode *inode = inode_open(sector);
+    strlcpy(e.path, path, sizeof(e.path));
+    e.start_dir_sector = start_dir_sector;
+    if (inode_write_at(inode, &e, sizeof e, 0) == sizeof e) {
+      success = true;
+    }
+    inode_close(inode);
+  }
+  return success;
+}
+
+struct symlink *symlink_open(struct inode *inode) {
+  struct symlink *symlink = calloc(1, sizeof *symlink);
+  if (inode != NULL && symlink != NULL) {
+    symlink->inode = inode;
+    struct symlink_entry e;
+    inode_read_at(inode, &e, sizeof e, 0);
+    symlink->path = calloc(1, sizeof(e.path));
+    strlcpy(symlink->path, e.path, sizeof(e.path));
+    symlink->start_dir = dir_open(inode_open(e.start_dir_sector));
+    return symlink;
+  } else {
+    inode_close(inode);
+    free(symlink);
+    return NULL;
+  }
+}
+
+char *symlink_path(struct symlink *link) { return link->path; }
+
+struct dir *symlink_start_dir(struct symlink *link) { return link->start_dir; }

@@ -6,12 +6,13 @@
 #include "devices/disk.h"
 #include "filesys/off_t.h"
 
-typedef uint32_t is_dir_t;
+/* 0 is regular file, 1 is directory, 2 is soft link. */
+typedef uint32_t file_type_t;
 
 struct bitmap;
 
 void inode_init(void);
-bool inode_create(disk_sector_t, off_t, is_dir_t);
+bool inode_create(disk_sector_t, off_t, file_type_t);
 struct inode *inode_open(disk_sector_t);
 struct inode *inode_reopen(struct inode *);
 disk_sector_t inode_get_inumber(const struct inode *);
@@ -22,6 +23,6 @@ off_t inode_write_at(struct inode *, const void *, off_t size, off_t offset);
 void inode_deny_write(struct inode *);
 void inode_allow_write(struct inode *);
 off_t inode_length(const struct inode *);
-is_dir_t inode_is_dir(struct inode *);
+file_type_t inode_file_type(struct inode *);
 
 #endif /* filesys/inode.h */

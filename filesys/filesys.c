@@ -72,12 +72,12 @@ bool filesys_create(const char *name, off_t initial_size) {
     success = false;
   }
   success = (success && dir != NULL && free_map_allocate(1, &inode_sector) &&
-             inode_create(inode_sector, initial_size, (is_dir_t)0) &&
+             inode_create(inode_sector, initial_size, (file_type_t)0) &&
              dir_add(dir, filename, inode_sector));
 #else
   struct dir *dir = dir_open_root();
   bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
-                  inode_create(inode_sector, initial_size, (is_dir_t)0) &&
+                  inode_create(inode_sector, initial_size, (file_type_t)0) &&
                   dir_add(dir, name, inode_sector));
 #endif
   if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
@@ -93,25 +93,54 @@ bool filesys_create(const char *name, off_t initial_size) {
  * or if an internal memory allocation fails. */
 struct file *filesys_open(const char *name) {
 #ifdef EFILESYS
-  char *filename = get_filename(name);
-  if (filename == NULL) {
-    return NULL;
-  }
-
   struct dir *dir = NULL;
-  if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
-    return NULL;
-  }
-
+  struct dir *start_dir = thread_current()->cur_dir;
   struct inode *inode = NULL;
-  if (dir != NULL) dir_lookup(dir, filename, &inode);
+  char *path = (char *)calloc(sizeof(char), NAME_MAX + 1);
+  strlcpy(path, name, strlen(name) + 1);
+  char *filename = NULL;
+
+  while (true) {
+    filename = get_filename(path);
+    if (filename == NULL) {
+      free(path);
+      return NULL;
+    }
+    if (!open_parent_dir(path, start_dir, &dir)) {
+      free(path);
+      return NULL;
+    }
+
+    if (dir != NULL && dir_lookup(dir, filename, &inode)) {
+      dir_close(dir);
+
+      // case for soft link
+      if (inode_file_type(inode) == (file_type_t)2) {
+        struct symlink *link = symlink_open(inode);
+        inode_close(inode);
+
+        char *new_path = symlink_path(link);
+        strlcpy(path, new_path, strlen(new_path) + 1);
+        start_dir = dir_reopen(symlink_start_dir(link));
+        symlink_close(link);
+
+        continue;
+      }
+
+      break;
+    } else {
+      free(path);
+      return NULL;
+    }
+  }
+  free(path);
 #else
   struct dir *dir = dir_open_root();
   struct inode *inode = NULL;
 
   if (dir != NULL) dir_lookup(dir, name, &inode);
-#endif
   dir_close(dir);
+#endif
 
   return file_open(inode);
 }
@@ -134,7 +163,7 @@ bool filesys_remove(const char *name) {
   bool success = false;
   struct inode *inode = NULL;
   if (dir != NULL && dir_lookup(dir, filename, &inode)) {
-    if (inode_is_dir(inode) == (is_dir_t)0) {  // case for normal file
+    if (inode_file_type(inode) == (file_type_t)0) {  // case for normal file
       success = dir_remove(dir, filename);
     } else {  // case for directory
       struct dir *victim = dir_open(inode);
@@ -242,6 +271,13 @@ bool filesys_create_dir(const char *name) {
   return success;
 }
 
+struct dir *get_start_directory(const char *path, struct dir *cur_dir) {
+  if (path[0] == "/") {
+    return dir_open_root();
+  }
+  return dir_reopen(cur_dir);
+}
+
 char *get_filename(const char *path) {
   if (path == NULL || strlen(path) == 0) {
     return NULL;
@@ -261,12 +297,8 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
     return false;
   }
 
-  struct dir *dir = NULL;
-  if (path[0] == '/') {
-    dir = dir_open_root();
-  } else if (cur_dir != NULL) {
-    dir = dir_reopen(cur_dir);
-  } else {
+  struct dir *dir = get_start_directory(path, cur_dir);
+  if (dir == NULL) {
     return false;
   }
 
@@ -293,7 +325,7 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
 
     dir_close(dir);
     // normal file, path is wrong
-    if (inode_is_dir(inode) == (is_dir_t)0) {
+    if (inode_file_type(inode) == (file_type_t)0) {
       inode_close(inode);
       success = false;
       goto done;
@@ -307,4 +339,41 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
 done:
   free(start);
   return success;
+}
+
+int filesys_create_symlink(const char *target, const char *linkpath) {
+  if (target == NULL || linkpath == NULL || strlen(target) == 0 ||
+      strlen(linkpath) == 0) {
+    return -1;
+  }
+
+  char *symlink_name = get_filename(linkpath);
+  if (symlink_name == NULL) {
+    return -1;
+  }
+
+  bool success = false;
+  disk_sector_t inode_sector = 0;
+  struct dir *parent_dir = NULL;
+  struct inode *inode = NULL;
+  struct dir *cur_dir = thread_current()->cur_dir;
+  if (open_parent_dir(linkpath, cur_dir, &parent_dir) && parent_dir != NULL &&
+      !dir_lookup(parent_dir, symlink_name, &inode)) {
+    success = true;
+  }
+
+  struct dir *start_dir = get_start_directory(linkpath, cur_dir);
+  disk_sector_t start_dir_sector = inode_get_inumber(dir_get_inode(start_dir));
+  dir_close(start_dir);
+
+  success &= (free_map_allocate(1, &inode_sector) &&
+              symlink_create(inode_sector, target, start_dir_sector) &&
+              dir_add(parent_dir, symlink_name, inode_sector) &&
+              dir_lookup(parent_dir, symlink_name, &inode));
+  dir_close(parent_dir);
+
+  if (success) {
+    return 0;
+  }
+  return -1;
 }

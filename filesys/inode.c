@@ -17,7 +17,7 @@
 struct inode_disk {
   disk_sector_t start;  /* First data sector. */
   off_t length;         /* File size in bytes. */
-  is_dir_t is_dir;      /* 1 if dir, 0 is regular file */
+  file_type_t type;     /* 0 is regular file, 1 is directory, 2 is soft link. */
   unsigned magic;       /* Magic number. */
   uint32_t unused[124]; /* Not used. */
 };
@@ -62,7 +62,7 @@ void inode_init(void) { list_init(&open_inodes); }
  * disk.
  * Returns true if successful.
  * Returns false if memory or disk allocation fails. */
-bool inode_create(disk_sector_t sector, off_t length, is_dir_t is_dir) {
+bool inode_create(disk_sector_t sector, off_t length, file_type_t type) {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -76,7 +76,7 @@ bool inode_create(disk_sector_t sector, off_t length, is_dir_t is_dir) {
   if (disk_inode != NULL) {
     size_t sectors = bytes_to_sectors(length);
     disk_inode->length = length;
-    disk_inode->is_dir = is_dir;
+    disk_inode->type = type;
     disk_inode->magic = INODE_MAGIC;
     if (free_map_allocate(sectors, &disk_inode->start)) {
       disk_write(filesys_disk, sector, disk_inode);
@@ -289,4 +289,4 @@ void inode_allow_write(struct inode *inode) {
 /* Returns the length, in bytes, of INODE's data. */
 off_t inode_length(const struct inode *inode) { return inode->data.length; }
 
-is_dir_t inode_is_dir(struct inode *inode) { return inode->data.is_dir; }
+file_type_t inode_file_type(struct inode *inode) { return inode->data.type; }

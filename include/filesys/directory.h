@@ -32,4 +32,10 @@ bool dir_readdir(struct dir *, char name[NAME_MAX + 1]);
 bool dir_is_empty(struct dir *);
 bool dir_is_same(struct dir *dir1, struct dir *dir2);
 
+bool symlink_create(disk_sector_t sector, const char *path,
+                    disk_sector_t start_dir_sector);
+struct symlink *symlink_open(struct inode *inode);
+char *symlink_path(struct symlink *link);
+struct dir *symlink_start_dir(struct symlink *link);
+
 #endif /* filesys/directory.h */

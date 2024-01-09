@@ -20,6 +20,7 @@ bool filesys_create_dir(const char *name);
 bool filesys_change_dir(const char *name);
 struct file *filesys_open(const char *name);
 bool filesys_remove(const char *name);
+int filesys_create_symlink(const char *target, const char *linkpath);
 
 bool open_parent_dir(const char *path, struct dir *cur_dir,
                      struct dir **parent_dir);
