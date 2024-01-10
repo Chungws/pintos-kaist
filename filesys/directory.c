@@ -259,6 +259,15 @@ struct symlink *symlink_open(struct inode *inode) {
   }
 }
 
+void symlink_close(struct symlink *link) {
+  if (link != NULL) {
+    inode_close(link->inode);
+    free(link->path);
+    dir_close(link->start_dir);
+    free(link);
+  }
+}
+
 char *symlink_path(struct symlink *link) { return link->path; }
 
 struct dir *symlink_start_dir(struct symlink *link) { return link->start_dir; }
