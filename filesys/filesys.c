@@ -166,7 +166,7 @@ bool filesys_remove(const char *name) {
   bool success = false;
   struct inode *inode = NULL;
   if (dir != NULL && dir_lookup(dir, filename, &inode)) {
-    if (inode_file_type(inode) == (file_type_t)0) {  // case for normal file
+    if (inode_file_type(inode) != (file_type_t)1) {  // case for not directory
       success = dir_remove(dir, filename);
     } else {  // case for directory
       struct dir *victim = dir_open(inode);
@@ -318,23 +318,55 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
 
   bool success = false;
 
-  for (token = strtok_r(cp_parent_path, "/", &save_ptr); token != NULL;
-       token = strtok_r(NULL, "/", &save_ptr)) {
-    if (!dir_lookup(dir, token, &inode)) {
+  while (true) {
+    for (token = strtok_r(cp_parent_path, "/", &save_ptr); token != NULL;
+         token = strtok_r(NULL, "/", &save_ptr)) {
+      if (!dir_lookup(dir, token, &inode)) {
+        dir_close(dir);
+        success = false;
+        goto done;
+      }
+
+      dir_close(dir);
+      // not directory
+      if (inode_file_type(inode) != (file_type_t)1) {
+        inode_close(inode);
+        success = false;
+        goto done;
+      }
+
+      dir = dir_open(inode);
+    }
+
+    if (!dir_lookup(dir, last, &inode)) {
       dir_close(dir);
       success = false;
       goto done;
     }
 
-    dir_close(dir);
-    // normal file, path is wrong
-    if (inode_file_type(inode) == (file_type_t)0) {
+    if (inode_file_type(inode) == (file_type_t)2) {  // symlink
+      struct symlink *link = symlink_open(inode);
       inode_close(inode);
-      success = false;
-      goto done;
+
+      char *new_path = symlink_path(link);
+
+      last = strrchr(new_path, '/');
+      size_t new_parent_path_strlen = strlen(new_path) - strlen(last);
+      cp_parent_path,
+          start = (char *)realloc(start, new_parent_path_strlen + 1);
+      strlcpy(cp_parent_path, new_path, new_parent_path_strlen + 1);
+      cp_parent_path[new_parent_path_strlen] = '\0';
+      token, save_ptr = NULL;
+
+      dir_close(dir);
+      dir = dir_reopen(symlink_start_dir(link));
+
+      symlink_close(link);
+      continue;
     }
 
-    dir = dir_open(inode);
+    inode_close(inode);
+    break;
   }
   *parent_dir = dir;
   success = true;
