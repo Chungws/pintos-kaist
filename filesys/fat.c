@@ -35,6 +35,7 @@ static struct fat_fs *fat_fs;
 void fat_boot_create(void);
 void fat_fs_init(void);
 void fat_link_init(void);
+cluster_t fat_get_free(void);
 
 void fat_init(void) {
   fat_fs = calloc(1, sizeof(struct fat_fs));
@@ -158,7 +159,7 @@ void fat_link_init(void) {
 
   fat_fs->free_head = fat_fs->data_start;
   tail = fat_fs->data_start;
-  for (int i = fat_fs->data_start + 1; i <= fat_fs->last_clst; ++i) {
+  for (cluster_t i = fat_fs->data_start + 1; i <= fat_fs->last_clst; ++i) {
     fat_put(tail, i);
     tail = i;
   }
@@ -208,6 +209,30 @@ cluster_t fat_create_chain(cluster_t clst) {
   return new;
 }
 
+/* Add COUNT clusters to the chain.
+ * If CLST is 0, start a new chain.
+ * Returns 0 if fails to allocate COUNT clusters. */
+cluster_t fat_create_chain_multiple(cluster_t clst, unsigned count) {
+  cluster_t start = 0;
+  cluster_t cur = 0;
+
+  cur = fat_create_chain(clst);
+  if (cur == 0) {
+    fat_remove_chain(clst, 0);
+    return 0;
+  }
+
+  start = cur;
+  for (cluster_t i = 1; i < count; ++i) {
+    cur = fat_create_chain(cur);
+    if (cur == 0) {
+      fat_remove_chain(clst, i);
+      return 0;
+    }
+  }
+  return start;
+}
+
 /* Remove the chain of clusters starting from CLST.
  * If PCLST is 0, assume CLST as the start of the chain. */
 void fat_remove_chain(cluster_t clst, cluster_t pclst) {
@@ -235,11 +260,12 @@ void fat_put(cluster_t clst, cluster_t val) { fat_fs->fat[clst] = val; }
 /* Fetch a value in the FAT table. */
 cluster_t fat_get(cluster_t clst) { return fat_fs->fat[clst]; }
 
-/* Covert a cluster # to a sector number. */
+/* Convert a cluster number to a sector number. */
 disk_sector_t cluster_to_sector(cluster_t clst) {
   return (disk_sector_t)clst * SECTORS_PER_CLUSTER;
 }
 
+/* Convert a sector number to a cluster number. */
 cluster_t sector_to_cluster(disk_sector_t sector) {
   return (cluster_t)sector / SECTORS_PER_CLUSTER +
          (sector % SECTORS_PER_CLUSTER);

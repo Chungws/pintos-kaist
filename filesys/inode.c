@@ -5,6 +5,7 @@
 #include <round.h>
 #include <string.h>
 
+#include "filesys/fat.h"
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
@@ -44,10 +45,21 @@ struct inode {
  * POS. */
 static disk_sector_t byte_to_sector(const struct inode *inode, off_t pos) {
   ASSERT(inode != NULL);
-  if (pos < inode->data.length)
-    return inode->data.start + pos / DISK_SECTOR_SIZE;
-  else
+  if (pos >= inode->data.length) {
     return -1;
+  }
+#ifdef EFILESYS
+  cluster_t cur = sector_to_cluster(inode->data.start);
+  for (size_t i = 0; i < pos / DISK_SECTOR_SIZE; ++i) {
+    cur = fat_get(cur);
+    if (cur == EOChain) {
+      return -1;
+    }
+  }
+  return cluster_to_sector(cur);
+#else
+  return inode->data.start + pos / DISK_SECTOR_SIZE;
+#endif
 }
 
 /* List of open inodes, so that opening a single inode twice
@@ -73,24 +85,54 @@ bool inode_create(disk_sector_t sector, off_t length, file_type_t type) {
   ASSERT(sizeof *disk_inode == DISK_SECTOR_SIZE);
 
   disk_inode = calloc(1, sizeof *disk_inode);
-  if (disk_inode != NULL) {
-    size_t sectors = bytes_to_sectors(length);
-    disk_inode->length = length;
-    disk_inode->type = type;
-    disk_inode->magic = INODE_MAGIC;
-    if (free_map_allocate(sectors, &disk_inode->start)) {
-      disk_write(filesys_disk, sector, disk_inode);
-      if (sectors > 0) {
-        static char zeros[DISK_SECTOR_SIZE];
-        size_t i;
-
-        for (i = 0; i < sectors; i++)
-          disk_write(filesys_disk, disk_inode->start + i, zeros);
-      }
-      success = true;
-    }
-    free(disk_inode);
+  if (disk_inode == NULL) {
+    goto done;
   }
+
+  size_t sectors = bytes_to_sectors(length);
+  disk_inode->length = length;
+  disk_inode->type = type;
+  disk_inode->magic = INODE_MAGIC;
+
+#ifdef EFILESYS
+  disk_inode->start = fat_create_chain_multiple(0, sectors);
+  if (disk_inode->start == 0) {
+    goto done;
+  }
+  disk_write(filesys_disk, sector, disk_inode);
+  if (sectors == 0) {
+    success = true;
+    goto done;
+  }
+  static char zeros[DISK_SECTOR_SIZE];
+  size_t i;
+  cluster_t cur = disk_inode->start;
+
+  disk_write(filesys_disk, cluster_to_sector(cur), zeros);
+  for (i = 1; i < sectors; ++i) {
+    cur = fat_get(cur);
+    disk_write(filesys_disk, cluster_to_sector(cur), zeros);
+  }
+
+  success = true;
+#else
+  if (!free_map_allocate(sectors, &disk_inode->start)) {
+    goto done;
+  }
+
+  disk_write(filesys_disk, sector, disk_inode);
+  if (sectors > 0) {
+    static char zeros[DISK_SECTOR_SIZE];
+    size_t i;
+
+    for (i = 0; i < sectors; i++)
+      disk_write(filesys_disk, disk_inode->start + i, zeros);
+  }
+  success = true;
+#endif
+
+done:
+  free(disk_inode);
   return success;
 }
 
@@ -150,8 +192,15 @@ void inode_close(struct inode *inode) {
 
     /* Deallocate blocks if removed. */
     if (inode->removed) {
+#ifdef EFILESYS
+      fat_remove_chain(inode->sector, 0);
+      if (inode_file_type(inode) != (file_type_t)2) {
+        fat_remove_chain(inode->data.start, 0);
+      }
+#else
       free_map_release(inode->sector, 1);
       free_map_release(inode->data.start, bytes_to_sectors(inode->data.length));
+#endif
     }
 
     free(inode);

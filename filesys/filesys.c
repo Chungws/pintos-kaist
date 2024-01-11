@@ -6,6 +6,7 @@
 
 #include "devices/disk.h"
 #include "filesys/directory.h"
+#include "filesys/fat.h"
 #include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
@@ -69,18 +70,20 @@ bool filesys_create(const char *name, off_t initial_size) {
 
   bool success = true;
   if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
-    success = false;
+    return false;
   }
-  success = (success && dir != NULL && free_map_allocate(1, &inode_sector) &&
+  inode_sector = fat_create_chain(0);
+  success = (dir != NULL && inode_sector != 0 &&
              inode_create(inode_sector, initial_size, (file_type_t)0) &&
              dir_add(dir, filename, inode_sector));
+  if (!success && inode_sector != 0) fat_remove_chain(inode_sector, 0);
 #else
   struct dir *dir = dir_open_root();
   bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
                   inode_create(inode_sector, initial_size, (file_type_t)0) &&
                   dir_add(dir, name, inode_sector));
-#endif
   if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
+#endif
   dir_close(dir);
 
   return success;
@@ -196,8 +199,8 @@ static void do_format(void) {
   fat_create();
   if (!dir_create(ROOT_DIR_SECTOR, 16)) PANIC("root directory creation failed");
   struct dir *root_dir = dir_open_root();
-  if (dir_add(root_dir, ".", ROOT_DIR_SECTOR) &&
-      dir_add(root_dir, "..", ROOT_DIR_SECTOR)) {
+  if (!dir_add(root_dir, ".", ROOT_DIR_SECTOR) ||
+      !dir_add(root_dir, "..", ROOT_DIR_SECTOR)) {
     PANIC("root directory's relative directory creation failed");
   }
   dir_close(root_dir);
@@ -272,7 +275,7 @@ bool filesys_create_dir(const char *name) {
 }
 
 struct dir *get_start_directory(const char *path, struct dir *cur_dir) {
-  if (path[0] == "/") {
+  if (path[0] == '/') {
     return dir_open_root();
   }
   return dir_reopen(cur_dir);
