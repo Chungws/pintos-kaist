@@ -62,7 +62,7 @@ void fat_open(void) {
   off_t bytes_read = 0;
   off_t bytes_left = sizeof(fat_fs->fat);
   const off_t fat_size_in_bytes = fat_fs->fat_length * sizeof(cluster_t);
-  for (unsigned i = 0; i < fat_fs->bs.fat_sectors; i++) {
+  for (unsigned i = 1; i < fat_fs->bs.fat_sectors; i++) {
     bytes_left = fat_size_in_bytes - bytes_read;
     if (bytes_left >= DISK_SECTOR_SIZE) {
       disk_read(filesys_disk, fat_fs->bs.fat_start + i, buffer + bytes_read);
@@ -93,7 +93,7 @@ void fat_close(void) {
   off_t bytes_wrote = 0;
   off_t bytes_left = sizeof(fat_fs->fat);
   const off_t fat_size_in_bytes = fat_fs->fat_length * sizeof(cluster_t);
-  for (unsigned i = 0; i < fat_fs->bs.fat_sectors; i++) {
+  for (unsigned i = 1; i < fat_fs->bs.fat_sectors; i++) {
     bytes_left = fat_size_in_bytes - bytes_wrote;
     if (bytes_left >= DISK_SECTOR_SIZE) {
       disk_write(filesys_disk, fat_fs->bs.fat_start + i, buffer + bytes_wrote);
@@ -252,6 +252,17 @@ void fat_remove_chain(cluster_t clst, cluster_t pclst) {
     fat_fs->free_head = pclst;
   }
   lock_release(&fat_fs->write_lock);
+}
+
+cluster_t fat_end_of_chain(cluster_t clst) {
+  cluster_t curr = clst, nxt;
+
+  while (curr != EOChain) {
+    nxt = fat_get(curr);
+    if (nxt == EOChain || nxt == 0) break;
+    curr = nxt;
+  }
+  return curr;
 }
 
 /* Update a value in the FAT table. */

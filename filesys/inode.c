@@ -10,34 +10,11 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 
-/* Identifies an inode. */
-#define INODE_MAGIC 0x494e4f44
-
-/* On-disk inode.
- * Must be exactly DISK_SECTOR_SIZE bytes long. */
-struct inode_disk {
-  disk_sector_t start;  /* First data sector. */
-  off_t length;         /* File size in bytes. */
-  file_type_t type;     /* 0 is regular file, 1 is directory, 2 is soft link. */
-  unsigned magic;       /* Magic number. */
-  uint32_t unused[124]; /* Not used. */
-};
-
 /* Returns the number of sectors to allocate for an inode SIZE
  * bytes long. */
 static inline size_t bytes_to_sectors(off_t size) {
   return DIV_ROUND_UP(size, DISK_SECTOR_SIZE);
 }
-
-/* In-memory inode. */
-struct inode {
-  struct list_elem elem;  /* Element in inode list. */
-  disk_sector_t sector;   /* Sector number of disk location. */
-  int open_cnt;           /* Number of openers. */
-  bool removed;           /* True if deleted, false otherwise. */
-  int deny_write_cnt;     /* 0: writes ok, >0: deny writes. */
-  struct inode_disk data; /* Inode content. */
-};
 
 /* Returns the disk sector that contains byte offset POS within
  * INODE.
@@ -271,8 +248,13 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size,
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
+  off_t gap =
+      bytes_to_sectors(offset + size) - bytes_to_sectors(inode_length(inode));
 
   if (inode->deny_write_cnt) return 0;
+#ifdef EFILESYS
+  if (gap >= 0 && !inode_extend(inode, gap, offset + size)) return 0;
+#endif
 
   while (size > 0) {
     /* Sector to write, starting byte offset within sector. */
@@ -317,6 +299,19 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size,
   free(bounce);
 
   return bytes_written;
+}
+
+bool inode_extend(struct inode *inode, int sectors, int new_size) {
+  cluster_t end;
+  int result = 0;
+
+  end = fat_end_of_chain(inode->data.start);
+  result = fat_create_chain_multiple(end, sectors == 0 ? 1 : sectors);
+  if (new_size > inode_length(inode)) {
+    inode->data.length = new_size;
+    disk_write(filesys_disk, inode->sector, &inode->data);
+  }
+  return result != 0;
 }
 
 /* Disables writes to INODE.

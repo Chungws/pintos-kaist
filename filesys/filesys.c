@@ -18,6 +18,8 @@ struct disk *filesys_disk;
 
 static void do_format(void);
 
+struct dir *get_start_directory(const char *path, struct dir *cur_dir);
+
 /* Initializes the file system module.
  * If FORMAT is true, reformats the file system. */
 void filesys_init(bool format) {
@@ -33,6 +35,7 @@ void filesys_init(bool format) {
   if (format) do_format();
 
   fat_open();
+  thread_current()->cur_dir = dir_open_root();
 #else
   /* Original FS */
   free_map_init();
@@ -63,13 +66,17 @@ bool filesys_create(const char *name, off_t initial_size) {
 #ifdef EFILESYS
   struct dir *dir = NULL;
 
+  printf("name = %s\n", name);
   char *filename = get_filename(name);
   if (filename == NULL) {
+    printf("filename is null!\n");
     return false;
   }
+  printf("filename = %s\n", filename);
 
   bool success = true;
   if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
+    printf("open_parent_dir failed\n");
     return false;
   }
   inode_sector = fat_create_chain(0);
@@ -288,8 +295,7 @@ char *get_filename(const char *path) {
 
   char *filename = strrchr(path, '/');
   if (filename == NULL) {
-    filename = path;
-    return filename;
+    return (char *)path;
   }
   return filename + 1;  // for "/"
 }
@@ -306,10 +312,9 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
   }
 
   char *last = strrchr(path, '/');
-  size_t parent_path_strlen = strlen(path) - strlen(last);
+  size_t parent_path_strlen = strlen(path) - (last == NULL ? 0 : strlen(last));
 
-  char *cp_parent_path,
-      *start = (char *)calloc(sizeof(char), parent_path_strlen + 1);
+  char *cp_parent_path = (char *)calloc(sizeof(char), parent_path_strlen + 1);
   strlcpy(cp_parent_path, path, parent_path_strlen + 1);
   cp_parent_path[parent_path_strlen] = '\0';
 
@@ -352,8 +357,8 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
 
       last = strrchr(new_path, '/');
       size_t new_parent_path_strlen = strlen(new_path) - strlen(last);
-      cp_parent_path,
-          start = (char *)realloc(start, new_parent_path_strlen + 1);
+      cp_parent_path =
+          (char *)realloc(cp_parent_path, new_parent_path_strlen + 1);
       strlcpy(cp_parent_path, new_path, new_parent_path_strlen + 1);
       cp_parent_path[new_parent_path_strlen] = '\0';
       token, save_ptr = NULL;
@@ -372,7 +377,7 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
   success = true;
 
 done:
-  free(start);
+  free(cp_parent_path);
   return success;
 }
 
