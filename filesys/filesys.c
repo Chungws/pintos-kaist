@@ -66,17 +66,13 @@ bool filesys_create(const char *name, off_t initial_size) {
 #ifdef EFILESYS
   struct dir *dir = NULL;
 
-  printf("name = %s\n", name);
   char *filename = get_filename(name);
   if (filename == NULL) {
-    printf("filename is null!\n");
     return false;
   }
-  printf("filename = %s\n", filename);
 
   bool success = true;
   if (!open_parent_dir(name, thread_current()->cur_dir, &dir)) {
-    printf("open_parent_dir failed\n");
     return false;
   }
   inode_sector = fat_create_chain(0);
@@ -312,7 +308,7 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
   }
 
   char *last = strrchr(path, '/');
-  size_t parent_path_strlen = strlen(path) - (last == NULL ? 0 : strlen(last));
+  size_t parent_path_strlen = last == NULL ? 0 : strlen(path) - strlen(last);
 
   char *cp_parent_path = (char *)calloc(sizeof(char), parent_path_strlen + 1);
   strlcpy(cp_parent_path, path, parent_path_strlen + 1);
@@ -343,13 +339,7 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
       dir = dir_open(inode);
     }
 
-    if (!dir_lookup(dir, last, &inode)) {
-      dir_close(dir);
-      success = false;
-      goto done;
-    }
-
-    if (inode_file_type(inode) == (file_type_t)2) {  // symlink
+    if (inode && inode_file_type(inode) == (file_type_t)2) {  // symlink
       struct symlink *link = symlink_open(inode);
       inode_close(inode);
 
