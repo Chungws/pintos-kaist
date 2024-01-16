@@ -10,6 +10,29 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 
+/* Identifies an inode. */
+#define INODE_MAGIC 0x494e4f44
+
+/* On-disk inode.
+ * Must be exactly DISK_SECTOR_SIZE bytes long. */
+struct inode_disk {
+  disk_sector_t start;  /* First data sector. */
+  off_t length;         /* File size in bytes. */
+  file_type_t type;     /* 0 is regular file, 1 is directory, 2 is soft link. */
+  unsigned magic;       /* Magic number. */
+  uint32_t unused[124]; /* Not used. */
+};
+
+/* In-memory inode. */
+struct inode {
+  struct list_elem elem;  /* Element in inode list. */
+  disk_sector_t sector;   /* Sector number of disk location. */
+  int open_cnt;           /* Number of openers. */
+  bool removed;           /* True if deleted, false otherwise. */
+  int deny_write_cnt;     /* 0: writes ok, >0: deny writes. */
+  struct inode_disk data; /* Inode content. */
+};
+
 /* Returns the number of sectors to allocate for an inode SIZE
  * bytes long. */
 static inline size_t bytes_to_sectors(off_t size) {
@@ -152,6 +175,7 @@ struct inode *inode_reopen(struct inode *inode) {
 
 /* Returns INODE's inode number. */
 disk_sector_t inode_get_inumber(const struct inode *inode) {
+  ASSERT(inode != NULL);
   return inode->sector;
 }
 
@@ -199,6 +223,8 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size,
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
+
+  ASSERT(inode != NULL);
 
   while (size > 0) {
     /* Disk sector to read, starting byte offset within sector. */
@@ -305,6 +331,7 @@ bool inode_extend(struct inode *inode, int sectors, int new_size) {
   cluster_t end;
   int result = 0;
 
+  ASSERT(inode != NULL);
   end = fat_end_of_chain(inode->data.start);
   result = fat_create_chain_multiple(end, sectors == 0 ? 1 : sectors);
   if (new_size > inode_length(inode)) {
@@ -317,6 +344,7 @@ bool inode_extend(struct inode *inode, int sectors, int new_size) {
 /* Disables writes to INODE.
    May be called at most once per inode opener. */
 void inode_deny_write(struct inode *inode) {
+  ASSERT(inode != NULL);
   inode->deny_write_cnt++;
   ASSERT(inode->deny_write_cnt <= inode->open_cnt);
 }
@@ -325,12 +353,19 @@ void inode_deny_write(struct inode *inode) {
  * Must be called once by each inode opener who has called
  * inode_deny_write() on the inode, before closing the inode. */
 void inode_allow_write(struct inode *inode) {
+  ASSERT(inode != NULL);
   ASSERT(inode->deny_write_cnt > 0);
   ASSERT(inode->deny_write_cnt <= inode->open_cnt);
   inode->deny_write_cnt--;
 }
 
 /* Returns the length, in bytes, of INODE's data. */
-off_t inode_length(const struct inode *inode) { return inode->data.length; }
+off_t inode_length(const struct inode *inode) {
+  ASSERT(inode != NULL);
+  return inode->data.length;
+}
 
-file_type_t inode_file_type(struct inode *inode) { return inode->data.type; }
+file_type_t inode_file_type(struct inode *inode) {
+  ASSERT(inode != NULL);
+  return inode->data.type;
+}
