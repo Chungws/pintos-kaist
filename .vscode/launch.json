@@ -7,8 +7,8 @@
       "request": "attach",
       "remote": true,
       "target": ":1234",
-      "executable": "${workspaceFolder}/userprog/build/kernel.o",
-      "cwd": "${workspaceFolder}/userprog/build",
+      "executable": "${workspaceFolder}/filesys/build/kernel.o",
+      "cwd": "${workspaceFolder}/filesys/build",
       "valuesFormatting": "parseText",
       "autorun": [
         "set arch i386:x86-64:intel",

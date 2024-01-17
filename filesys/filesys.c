@@ -254,24 +254,32 @@ bool filesys_create_dir(const char *name) {
   }
 
   struct inode *inode = NULL;
-  if (open_parent_dir(name, thread_current()->cur_dir, &parent_dir) &&
-      parent_dir != NULL && !dir_lookup(parent_dir, new_dirname, &inode)) {
-    success = true;
+  if (!open_parent_dir(name, thread_current()->cur_dir, &parent_dir)) {
+    return false;
   }
-  success &= (free_map_allocate(1, &inode_sector) &&
-              dir_create(inode_sector, DIR_ENTRY_MAX) &&
-              dir_add(parent_dir, new_dirname, inode_sector) &&
-              dir_lookup(parent_dir, new_dirname, &inode));
+  if (parent_dir == NULL) {
+    return false;
+  }
+  if (dir_lookup(parent_dir, new_dirname, &inode) == true) {
+    return false;
+  }
 
-  if (success) {
+  inode_sector = fat_create_chain(0);
+
+  success = dir_create(inode_sector, DIR_ENTRY_MAX) &&
+            dir_add(parent_dir, new_dirname, inode_sector) &&
+            dir_lookup(parent_dir, new_dirname, &inode);
+
+  if (!success && inode_sector != 0) {
+    fat_remove_chain(inode_sector, 0);
+  } else {
     struct dir *new_dir = dir_open(inode);
     success &=
-        (dir_add(new_dir, ".", inode_sector) &&
-         dir_add(new_dir, "..", inode_get_inumber(dir_get_inode(parent_dir))));
+        dir_add(new_dir, ".", inode_sector) &&
+        dir_add(new_dir, "..", inode_get_inumber(dir_get_inode(parent_dir)));
     dir_close(new_dir);
   }
 
-  if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
   dir_close(parent_dir);
 
   return success;
