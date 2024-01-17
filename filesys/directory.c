@@ -223,7 +223,7 @@ bool dir_is_empty(struct dir *dir) {
 }
 
 bool dir_is_same(struct dir *dir1, struct dir *dir2) {
-  return inode_get_inumber(dir1->inode) != inode_get_inumber(dir2->inode);
+  return inode_get_inumber(dir1->inode) == inode_get_inumber(dir2->inode);
 }
 
 bool symlink_create(disk_sector_t sector, const char *path,
