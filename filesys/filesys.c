@@ -368,7 +368,6 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
       continue;
     }
 
-    inode_close(inode);
     break;
   }
   *parent_dir = dir;
