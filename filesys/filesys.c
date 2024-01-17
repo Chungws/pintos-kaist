@@ -102,7 +102,7 @@ struct file *filesys_open(const char *name) {
   struct dir *dir = NULL;
   struct dir *start_dir = thread_current()->cur_dir;
   struct inode *inode = NULL;
-  char *path = (char *)calloc(sizeof(char), NAME_MAX + 1);
+  char *path = (char *)calloc(sizeof(char), strlen(name) + 1);
   strlcpy(path, name, strlen(name) + 1);
   char *filename = NULL;
 
@@ -117,7 +117,8 @@ struct file *filesys_open(const char *name) {
       return NULL;
     }
 
-    if (dir != NULL && dir_lookup(dir, filename, &inode)) {
+    if (dir != NULL &&
+        dir_lookup(dir, strlen(filename) == 0 ? "." : filename, &inode)) {
       dir_close(dir);
 
       // case for soft link
@@ -173,8 +174,7 @@ bool filesys_remove(const char *name) {
       success = dir_remove(dir, filename);
     } else {  // case for directory
       struct dir *victim = dir_open(inode);
-      if (dir_is_empty(victim) &&
-          !dir_is_same(thread_current()->cur_dir, victim)) {
+      if (dir_is_empty(victim)) {
         success = dir_remove(dir, filename);
       }
       dir_close(victim);
@@ -231,7 +231,7 @@ bool filesys_change_dir(const char *name) {
   struct dir *dir = NULL;
   struct inode *inode = NULL;
   if (open_parent_dir(name, cur_dir, &dir) && dir != NULL &&
-      dir_lookup(dir, last_dirname, &inode)) {
+      dir_lookup(dir, strlen(last_dirname) == 0 ? "." : last_dirname, &inode)) {
     dir_close(dir);
     dir = dir_open(inode);
     if (cur_dir != NULL) {

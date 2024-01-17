@@ -448,7 +448,7 @@ bool sys_readdir(int fd, char *name) {
 
   while (true) {
     success = dir_readdir(dir, tmp);
-    if (strcmp(tmp, ".") != 0 && strcmp(tmp, "..") != 0) {
+    if (!success || strcmp(tmp, ".") != 0 && strcmp(tmp, "..") != 0) {
       break;
     }
   }
