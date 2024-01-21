@@ -23,7 +23,7 @@ RUN locale-gen en_US.UTF-8
 
 USER $USERNAME
 
-RUN echo "source /workspaces/pintos-dapi/activate" >> ~/.bashrc
+RUN echo "source /workspaces/dapi-pintos/activate" >> ~/.bashrc
 
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en

@@ -327,48 +327,54 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
 
   bool success = false;
 
+  token = strtok_r(cp_parent_path, "/", &save_ptr);
   while (true) {
-    for (token = strtok_r(cp_parent_path, "/", &save_ptr); token != NULL;
-         token = strtok_r(NULL, "/", &save_ptr)) {
-      if (!dir_lookup(dir, token, &inode)) {
-        dir_close(dir);
-        success = false;
-        goto done;
-      }
-
+    if (token == NULL) {
+      break;
+    }
+    if (!dir_lookup(dir, token, &inode)) {
       dir_close(dir);
-      // not directory
-      if (inode_file_type(inode) != (file_type_t)1) {
-        inode_close(inode);
-        success = false;
-        goto done;
-      }
-
-      dir = dir_open(inode);
+      success = false;
+      goto done;
     }
 
-    if (inode && inode_file_type(inode) == (file_type_t)2) {  // symlink
+    dir_close(dir);
+
+    file_type_t f_type = inode_file_type(inode);
+    if (f_type == (file_type_t)0) {
+      inode_close(inode);
+      success = false;
+      goto done;
+    } else if (f_type == (file_type_t)2) {
       struct symlink *link = symlink_open(inode);
       inode_close(inode);
 
       char *new_path = symlink_path(link);
 
       last = strrchr(new_path, '/');
-      size_t new_parent_path_strlen = strlen(new_path) - strlen(last);
+      size_t new_parent_path_strlen = strlen(new_path) + strlen(save_ptr) + 1;
+      char *temp = (char *)calloc(sizeof(char), strlen(save_ptr) + 1);
+      strlcpy(temp, save_ptr, strlen(save_ptr) + 1);
+
       cp_parent_path =
           (char *)realloc(cp_parent_path, new_parent_path_strlen + 1);
-      strlcpy(cp_parent_path, new_path, new_parent_path_strlen + 1);
+      strlcpy(cp_parent_path, new_path, strlen(new_path) + 1);
+      strlcat(cp_parent_path, "/", strlen(new_path) + 2);
+      strlcat(cp_parent_path, temp, new_parent_path_strlen + 1);
       cp_parent_path[new_parent_path_strlen] = '\0';
+      free(temp);
       token, save_ptr = NULL;
 
-      dir_close(dir);
       dir = dir_reopen(symlink_start_dir(link));
 
       symlink_close(link);
-      continue;
-    }
 
-    break;
+      token = strtok_r(cp_parent_path, "/", &save_ptr);
+      continue;
+    } else {
+      dir = dir_open(inode);
+    }
+    token = strtok_r(NULL, "/", &save_ptr);
   }
   *parent_dir = dir;
   success = true;
@@ -403,7 +409,8 @@ int filesys_create_symlink(const char *target, const char *linkpath) {
   disk_sector_t start_dir_sector = inode_get_inumber(dir_get_inode(start_dir));
   dir_close(start_dir);
 
-  success &= (free_map_allocate(1, &inode_sector) &&
+  inode_sector = fat_create_chain(0);
+  success &= (inode_sector != 0 &&
               symlink_create(inode_sector, target, start_dir_sector) &&
               dir_add(parent_dir, symlink_name, inode_sector) &&
               dir_lookup(parent_dir, symlink_name, &inode));
