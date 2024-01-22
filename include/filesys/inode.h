@@ -26,5 +26,8 @@ void inode_deny_write(struct inode *);
 void inode_allow_write(struct inode *);
 off_t inode_length(const struct inode *);
 file_type_t inode_file_type(struct inode *);
+off_t inode_get_file_pos(struct inode *inode);
+void inode_file_pos_set(struct inode *inode, off_t pos);
+bool inode_removed(struct inode *inode);
 
 #endif /* filesys/inode.h */

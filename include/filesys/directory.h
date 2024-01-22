@@ -38,5 +38,6 @@ struct symlink *symlink_open(struct inode *inode);
 void symlink_close(struct symlink *link);
 char *symlink_path(struct symlink *link);
 struct dir *symlink_start_dir(struct symlink *link);
+void dir_close_wo_inode(struct dir *dir);
 
 #endif /* filesys/directory.h */

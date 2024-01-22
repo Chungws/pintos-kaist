@@ -453,8 +453,14 @@ bool sys_readdir(int fd, char *name) {
     }
   }
 
+  if (success) {
+    strlcpy(name, tmp, READDIR_MAX_LEN);
+    name[READDIR_MAX_LEN] = '\0';
+  }
+
   free(tmp);
-  dir_close(dir);
+  // dir_close(dir);
+  dir_close_wo_inode(dir);
 
 done:
   filesys_lock_release();

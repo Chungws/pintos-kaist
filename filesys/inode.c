@@ -31,6 +31,7 @@ struct inode {
   bool removed;           /* True if deleted, false otherwise. */
   int deny_write_cnt;     /* 0: writes ok, >0: deny writes. */
   struct inode_disk data; /* Inode content. */
+  off_t file_pos;
 };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -79,6 +80,9 @@ bool inode_create(disk_sector_t sector, off_t length, file_type_t type) {
   bool success = false;
 
   ASSERT(length >= 0);
+  if (sector >= DISK_SECTOR_SIZE * 5) {
+    goto done;
+  }
 
   /* If this assertion fails, the inode structure is not exactly
    * one sector in size, and you should fix that. */
@@ -163,6 +167,7 @@ struct inode *inode_open(disk_sector_t sector) {
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+  inode->file_pos = 0;
   disk_read(filesys_disk, inode->sector, &inode->data);
   return inode;
 }
@@ -170,6 +175,7 @@ struct inode *inode_open(disk_sector_t sector) {
 /* Reopens and returns INODE. */
 struct inode *inode_reopen(struct inode *inode) {
   if (inode != NULL) inode->open_cnt++;
+  if (inode != NULL) inode->file_pos = 0;
   return inode;
 }
 
@@ -368,4 +374,19 @@ off_t inode_length(const struct inode *inode) {
 file_type_t inode_file_type(struct inode *inode) {
   ASSERT(inode != NULL);
   return inode->data.type;
+}
+
+off_t inode_file_pos(const struct inode *inode) {
+  ASSERT(inode != NULL);
+  return inode->file_pos;
+}
+
+void inode_file_pos_set(struct inode *inode, off_t pos) {
+  ASSERT(inode != NULL);
+  inode->file_pos = pos;
+}
+
+bool inode_removed(struct inode *inode) {
+  ASSERT(inode != NULL);
+  return inode->removed;
 }

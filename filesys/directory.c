@@ -74,6 +74,12 @@ void dir_close(struct dir *dir) {
   }
 }
 
+void dir_close_wo_inode(struct dir *dir) {
+  if (dir != NULL) {
+    free(dir);
+  }
+}
+
 /* Returns the inode encapsulated by DIR. */
 struct inode *dir_get_inode(struct dir *dir) { return dir->inode; }
 
@@ -89,6 +95,10 @@ static bool lookup(const struct dir *dir, const char *name,
 
   ASSERT(dir != NULL);
   ASSERT(name != NULL);
+
+  if (inode_removed(dir->inode)) {
+    return false;
+  }
 
   for (ofs = 0; inode_read_at(dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e)
@@ -134,6 +144,10 @@ bool dir_add(struct dir *dir, const char *name, disk_sector_t inode_sector) {
 
   /* Check NAME for validity. */
   if (*name == '\0' || strlen(name) > NAME_MAX) return false;
+
+  if (inode_removed(dir->inode)) {
+    goto done;
+  }
 
   /* Check that NAME is not in use. */
   if (lookup(dir, name, NULL, NULL)) goto done;
@@ -196,9 +210,10 @@ done:
  * contains no more entries. */
 bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
   struct dir_entry e;
-
+  dir->pos = inode_file_pos(dir->inode);
   while (inode_read_at(dir->inode, &e, sizeof e, dir->pos) == sizeof e) {
     dir->pos += sizeof e;
+    inode_file_pos_set(dir->inode, dir->pos);
     if (e.in_use) {
       strlcpy(name, e.name, NAME_MAX + 1);
       return true;
