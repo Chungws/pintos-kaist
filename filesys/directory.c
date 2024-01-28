@@ -36,7 +36,7 @@ struct symlink_entry {
  * given SECTOR.  Returns true if successful, false on failure. */
 bool dir_create(disk_sector_t sector, size_t entry_cnt) {
   return inode_create(sector, entry_cnt * sizeof(struct dir_entry),
-                      (file_type_t)1);
+                      FILETYPE_DIR);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -245,7 +245,7 @@ bool symlink_create(disk_sector_t sector, const char *path,
                     disk_sector_t start_dir_sector) {
   struct symlink_entry e;
   bool success = false;
-  if (inode_create(sector, sizeof(struct symlink_entry), (file_type_t)2)) {
+  if (inode_create(sector, sizeof(struct symlink_entry), FILETYPE_SYMLINK)) {
     struct inode *inode = inode_open(sector);
     strlcpy(e.path, path, sizeof(e.path));
     e.start_dir_sector = start_dir_sector;

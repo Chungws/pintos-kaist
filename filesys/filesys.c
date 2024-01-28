@@ -77,13 +77,13 @@ bool filesys_create(const char *name, off_t initial_size) {
   }
   inode_sector = fat_create_chain(0);
   success = (dir != NULL && inode_sector != 0 &&
-             inode_create(inode_sector, initial_size, (file_type_t)0) &&
+             inode_create(inode_sector, initial_size, FILETYPE_FILE) &&
              dir_add(dir, filename, inode_sector));
   if (!success && inode_sector != 0) fat_remove_chain(inode_sector, 0);
 #else
   struct dir *dir = dir_open_root();
   bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
-                  inode_create(inode_sector, initial_size, (file_type_t)0) &&
+                  inode_create(inode_sector, initial_size, FILETYPE_FILE) &&
                   dir_add(dir, name, inode_sector));
   if (!success && inode_sector != 0) free_map_release(inode_sector, 1);
 #endif
@@ -122,7 +122,7 @@ struct file *filesys_open(const char *name) {
       dir_close(dir);
 
       // case for soft link
-      if (inode_file_type(inode) == (file_type_t)2) {
+      if (inode_file_type(inode) == FILETYPE_SYMLINK) {
         struct symlink *link = symlink_open(inode);
         inode_close(inode);
 
@@ -170,7 +170,7 @@ bool filesys_remove(const char *name) {
   bool success = false;
   struct inode *inode = NULL;
   if (dir != NULL && dir_lookup(dir, filename, &inode)) {
-    if (inode_file_type(inode) != (file_type_t)1) {  // case for not directory
+    if (inode_file_type(inode) != FILETYPE_DIR) {  // case for not directory
       success = dir_remove(dir, filename);
     } else {  // case for directory
       struct dir *victim = dir_open(inode);
@@ -340,12 +340,12 @@ bool open_parent_dir(const char *path, struct dir *cur_dir,
 
     dir_close(dir);
 
-    file_type_t f_type = inode_file_type(inode);
-    if (f_type == (file_type_t)0) {
+    enum file_type_t f_type = inode_file_type(inode);
+    if (f_type == FILETYPE_FILE) {
       inode_close(inode);
       success = false;
       goto done;
-    } else if (f_type == (file_type_t)2) {
+    } else if (f_type == FILETYPE_SYMLINK) {
       struct symlink *link = symlink_open(inode);
       inode_close(inode);
 

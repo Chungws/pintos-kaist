@@ -23,7 +23,6 @@ void fat_init(void);
 void fat_open(void);
 void fat_close(void);
 void fat_create(void);
-void fat_close(void);
 
 cluster_t fat_create_chain(
     cluster_t clst /* Cluster # to stretch, 0: Create a new chain */
