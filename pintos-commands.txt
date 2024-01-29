@@ -93,132 +93,132 @@ pintos --gdb -v -k -m 20   --fs-disk=10 -p tests/filesys/base/syn-read:syn-read 
 pintos --gdb -v -k -m 20   --fs-disk=10 -p tests/filesys/base/syn-remove:syn-remove -- -q   -f run syn-remove
 pintos --gdb -v -k -m 20   --fs-disk=10 -p tests/filesys/base/syn-write:syn-write -p tests/filesys/base/child-syn-wrt:child-syn-wrt -- -q   -f run syn-write
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-empty-name:dir-empty-name -p tests/filesys/extended/tar:tar -- -q   -f run dir-empty-name
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-empty-name.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-empty-name:dir-empty-name -p tests/filesys/extended/tar:tar -- -q   -f run dir-empty-name \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-empty-name.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-mk-tree:dir-mk-tree -p tests/filesys/extended/tar:tar -- -q   -f run dir-mk-tree
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-mk-tree.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-mk-tree:dir-mk-tree -p tests/filesys/extended/tar:tar -- -q   -f run dir-mk-tree \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-mk-tree.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-mkdir:dir-mkdir -p tests/filesys/extended/tar:tar -- -q   -f run dir-mkdir
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-mkdir.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-mkdir:dir-mkdir -p tests/filesys/extended/tar:tar -- -q   -f run dir-mkdir \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-mkdir.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-open:dir-open -p tests/filesys/extended/tar:tar -- -q   -f run dir-open
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-open.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-open:dir-open -p tests/filesys/extended/tar:tar -- -q   -f run dir-open \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-open.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-over-file:dir-over-file -p tests/filesys/extended/tar:tar -- -q   -f run dir-over-file
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-over-file.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-over-file:dir-over-file -p tests/filesys/extended/tar:tar -- -q   -f run dir-over-file \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-over-file.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-cwd:dir-rm-cwd -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-cwd
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-cwd.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-cwd:dir-rm-cwd -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-cwd \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-cwd.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-parent:dir-rm-parent -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-parent
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-parent.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-parent:dir-rm-parent -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-parent \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-parent.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-root:dir-rm-root -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-root
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-root.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-root:dir-rm-root -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-root \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-root.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-tree:dir-rm-tree -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-tree
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-tree.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rm-tree:dir-rm-tree -p tests/filesys/extended/tar:tar -- -q   -f run dir-rm-tree \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rm-tree.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rmdir:dir-rmdir -p tests/filesys/extended/tar:tar -- -q   -f run dir-rmdir
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rmdir.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-rmdir:dir-rmdir -p tests/filesys/extended/tar:tar -- -q   -f run dir-rmdir \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-rmdir.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-under-file:dir-under-file -p tests/filesys/extended/tar:tar -- -q   -f run dir-under-file
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-under-file.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-under-file:dir-under-file -p tests/filesys/extended/tar:tar -- -q   -f run dir-under-file \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-under-file.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-vine:dir-vine -p tests/filesys/extended/tar:tar -- -q   -f run dir-vine
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-vine.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/dir-vine:dir-vine -p tests/filesys/extended/tar:tar -- -q   -f run dir-vine \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/dir-vine.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-create:grow-create -p tests/filesys/extended/tar:tar -- -q   -f run grow-create
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-create.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-create:grow-create -p tests/filesys/extended/tar:tar -- -q   -f run grow-create \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-create.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-dir-lg:grow-dir-lg -p tests/filesys/extended/tar:tar -- -q   -f run grow-dir-lg
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-dir-lg.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-dir-lg:grow-dir-lg -p tests/filesys/extended/tar:tar -- -q   -f run grow-dir-lg \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-dir-lg.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-file-size:grow-file-size -p tests/filesys/extended/tar:tar -- -q   -f run grow-file-size
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-file-size.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-file-size:grow-file-size -p tests/filesys/extended/tar:tar -- -q   -f run grow-file-size \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-file-size.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-root-lg:grow-root-lg -p tests/filesys/extended/tar:tar -- -q   -f run grow-root-lg
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-root-lg.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-root-lg:grow-root-lg -p tests/filesys/extended/tar:tar -- -q   -f run grow-root-lg \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-root-lg.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-root-sm:grow-root-sm -p tests/filesys/extended/tar:tar -- -q   -f run grow-root-sm
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-root-sm.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-root-sm:grow-root-sm -p tests/filesys/extended/tar:tar -- -q   -f run grow-root-sm \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-root-sm.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-seq-lg:grow-seq-lg -p tests/filesys/extended/tar:tar -- -q   -f run grow-seq-lg
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-seq-lg.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-seq-lg:grow-seq-lg -p tests/filesys/extended/tar:tar -- -q   -f run grow-seq-lg \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-seq-lg.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-seq-sm:grow-seq-sm -p tests/filesys/extended/tar:tar -- -q   -f run grow-seq-sm
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-seq-sm.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-seq-sm:grow-seq-sm -p tests/filesys/extended/tar:tar -- -q   -f run grow-seq-sm \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-seq-sm.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-sparse:grow-sparse -p tests/filesys/extended/tar:tar -- -q   -f run grow-sparse
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-sparse.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-sparse:grow-sparse -p tests/filesys/extended/tar:tar -- -q   -f run grow-sparse \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-sparse.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-tell:grow-tell -p tests/filesys/extended/tar:tar -- -q   -f run grow-tell
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-tell.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-tell:grow-tell -p tests/filesys/extended/tar:tar -- -q   -f run grow-tell \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-tell.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-two-files:grow-two-files -p tests/filesys/extended/tar:tar -- -q   -f run grow-two-files
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-two-files.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/grow-two-files:grow-two-files -p tests/filesys/extended/tar:tar -- -q   -f run grow-two-files \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/grow-two-files.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/syn-rw:syn-rw -p tests/filesys/extended/tar:tar -p tests/filesys/extended/child-syn-rw:child-syn-rw -- -q   -f run syn-rw
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/syn-rw.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/syn-rw:syn-rw -p tests/filesys/extended/tar:tar -p tests/filesys/extended/child-syn-rw:child-syn-rw -- -q   -f run syn-rw \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/syn-rw.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/symlink-file:symlink-file -p tests/filesys/extended/tar:tar -- -q   -f run symlink-file
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/symlink-file.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/symlink-file:symlink-file -p tests/filesys/extended/tar:tar -- -q   -f run symlink-file \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/symlink-file.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/symlink-dir:symlink-dir -p tests/filesys/extended/tar:tar -- -q   -f run symlink-dir
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/symlink-dir.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/symlink-dir:symlink-dir -p tests/filesys/extended/tar:tar -- -q   -f run symlink-dir \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/symlink-dir.tar -- -q  run 'tar fs.tar /'
 
-pintos-mkdisk tmp.dsk 2
-pintos --gdb -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/symlink-link:symlink-link -p tests/filesys/extended/tar:tar -- -q   -f run symlink-link
-pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/symlink-link.tar -- -q  run 'tar fs.tar /'
-rm -f tmp.dsk
+rm -f tmp.dsk \
+ && pintos-mkdisk tmp.dsk 2 \
+ && pintos -v -k -m 20   --fs-disk=tmp.dsk -p tests/filesys/extended/symlink-link:symlink-link -p tests/filesys/extended/tar:tar -- -q   -f run symlink-link \
+ && pintos --gdb -v -k   --fs-disk=tmp.dsk -g fs.tar:tests/filesys/extended/symlink-link.tar -- -q  run 'tar fs.tar /'
