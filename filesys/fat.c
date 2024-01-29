@@ -82,11 +82,10 @@ void fat_close(void) {
   // Write FAT boot sector
   uint8_t *bounce = calloc(1, DISK_SECTOR_SIZE);
   if (bounce == NULL) PANIC("FAT close failed");
+  fat_fs->bs.free_head = fat_fs->free_head;
   memcpy(bounce, &fat_fs->bs, sizeof(fat_fs->bs));
   disk_write(filesys_disk, FAT_BOOT_SECTOR, bounce);
   free(bounce);
-
-  fat_fs->bs.free_head = fat_fs->free_head;
 
   // Write FAT directly to the disk
   uint8_t *buffer = (uint8_t *)fat_fs->fat;

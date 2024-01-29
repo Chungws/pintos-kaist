@@ -446,16 +446,10 @@ bool sys_readdir(int fd, char *name) {
     goto done;
   }
 
-  while (true) {
-    success = dir_readdir(dir, tmp);
-    if (!success || strcmp(tmp, ".") != 0 && strcmp(tmp, "..") != 0) {
-      break;
-    }
-  }
-
+  success = dir_readdir(dir, tmp);
   if (success) {
-    strlcpy(name, tmp, READDIR_MAX_LEN);
-    name[READDIR_MAX_LEN] = '\0';
+    strlcpy(name, tmp, READDIR_MAX_LEN + 1);
+    name[READDIR_MAX_LEN + 1] = '\0';
   }
 
   free(tmp);

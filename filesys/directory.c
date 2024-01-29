@@ -100,6 +100,11 @@ static bool lookup(const struct dir *dir, const char *name,
     return false;
   }
 
+  if (strlen(name) == 0) {
+    // same as .
+    return true;
+  }
+
   for (ofs = 0; inode_read_at(dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e)
     if (e.in_use && !strcmp(name, e.name)) {
@@ -210,11 +215,11 @@ done:
  * contains no more entries. */
 bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
   struct dir_entry e;
-  dir->pos = inode_file_pos(dir->inode);
+  // dir->pos = inode_file_pos(dir->inode);
   while (inode_read_at(dir->inode, &e, sizeof e, dir->pos) == sizeof e) {
     dir->pos += sizeof e;
-    inode_file_pos_set(dir->inode, dir->pos);
-    if (e.in_use) {
+    // inode_file_pos_set(dir->inode, dir->pos);
+    if (e.in_use && strcmp(e.name, ".") && strcmp(e.name, "..")) {
       strlcpy(name, e.name, NAME_MAX + 1);
       return true;
     }
