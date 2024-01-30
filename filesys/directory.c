@@ -45,7 +45,7 @@ struct dir *dir_open(struct inode *inode) {
   struct dir *dir = calloc(1, sizeof *dir);
   if (inode != NULL && dir != NULL) {
     dir->inode = inode;
-    dir->pos = 0;
+    dir->pos = inode_get_file_pos(inode);
     return dir;
   } else {
     inode_close(inode);
@@ -210,7 +210,7 @@ done:
  * contains no more entries. */
 bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
   struct dir_entry e;
-  dir->pos = inode_file_pos(dir->inode);
+  dir->pos = inode_get_file_pos(dir->inode);
   while (inode_read_at(dir->inode, &e, sizeof e, dir->pos) == sizeof e) {
     dir->pos += sizeof e;
     inode_file_pos_set(dir->inode, dir->pos);

@@ -175,7 +175,7 @@ struct inode *inode_open(disk_sector_t sector) {
 /* Reopens and returns INODE. */
 struct inode *inode_reopen(struct inode *inode) {
   if (inode != NULL) inode->open_cnt++;
-  if (inode != NULL) inode->file_pos = 0;
+  // if (inode != NULL) inode->file_pos = 0;
   return inode;
 }
 
@@ -376,7 +376,7 @@ file_type_t inode_file_type(struct inode *inode) {
   return inode->data.type;
 }
 
-off_t inode_file_pos(const struct inode *inode) {
+off_t inode_get_file_pos(const struct inode *inode) {
   ASSERT(inode != NULL);
   return inode->file_pos;
 }
