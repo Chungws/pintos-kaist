@@ -293,7 +293,7 @@ int sys_write(int fd, const void *buffer, unsigned size) {
     }
   } else if (f == NULL || f == STDIN_FD) {
     result = -1;
-  } else if (inode_file_type(file_get_inode(f)) != (file_type_t)0) {
+  } else if (inode_file_type(file_get_inode(f)) != FILETYPE_FILE) {
     result = -1;
   } else {
     result = file_write(f, buffer, size);
@@ -433,7 +433,7 @@ bool sys_readdir(int fd, char *name) {
     goto done;
   }
 
-  if (inode_file_type(file_get_inode(f)) != (file_type_t)1) {
+  if (inode_file_type(file_get_inode(f)) != FILETYPE_DIR) {
     goto done;
   }
 
@@ -446,16 +446,10 @@ bool sys_readdir(int fd, char *name) {
     goto done;
   }
 
-  while (true) {
-    success = dir_readdir(dir, tmp);
-    if (!success || strcmp(tmp, ".") != 0 && strcmp(tmp, "..") != 0) {
-      break;
-    }
-  }
-
+  success = dir_readdir(dir, tmp);
   if (success) {
-    strlcpy(name, tmp, READDIR_MAX_LEN);
-    name[READDIR_MAX_LEN] = '\0';
+    strlcpy(name, tmp, READDIR_MAX_LEN + 1);
+    name[READDIR_MAX_LEN + 1] = '\0';
   }
 
   free(tmp);
@@ -479,7 +473,7 @@ bool sys_isdir(int fd) {
     return is_dir;
   }
 
-  if (inode_file_type(file_get_inode(f)) == (file_type_t)1) {
+  if (inode_file_type(file_get_inode(f)) == FILETYPE_DIR) {
     is_dir = true;
   }
   filesys_lock_release();

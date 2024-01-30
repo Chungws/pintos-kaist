@@ -36,7 +36,7 @@ struct symlink_entry {
  * given SECTOR.  Returns true if successful, false on failure. */
 bool dir_create(disk_sector_t sector, size_t entry_cnt) {
   return inode_create(sector, entry_cnt * sizeof(struct dir_entry),
-                      (file_type_t)1);
+                      FILETYPE_DIR);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -98,6 +98,11 @@ static bool lookup(const struct dir *dir, const char *name,
 
   if (inode_removed(dir->inode)) {
     return false;
+  }
+
+  if (strlen(name) == 0) {
+    // same as .
+    return true;
   }
 
   for (ofs = 0; inode_read_at(dir->inode, &e, sizeof e, ofs) == sizeof e;
@@ -214,7 +219,7 @@ bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
   while (inode_read_at(dir->inode, &e, sizeof e, dir->pos) == sizeof e) {
     dir->pos += sizeof e;
     inode_file_pos_set(dir->inode, dir->pos);
-    if (e.in_use) {
+    if (e.in_use && strcmp(e.name, ".") && strcmp(e.name, "..")) {
       strlcpy(name, e.name, NAME_MAX + 1);
       return true;
     }
@@ -225,8 +230,8 @@ bool dir_readdir(struct dir *dir, char name[NAME_MAX + 1]) {
 bool dir_is_empty(struct dir *dir) {
   char *tmp = (char *)malloc(NAME_MAX + 1);
   struct dir *tmp_dir = dir_reopen(dir);
-  dir_readdir(tmp_dir, tmp);  // case for "."
-  dir_readdir(tmp_dir, tmp);  // case for ".."
+  // dir_readdir(tmp_dir, tmp);  // case for "."
+  // dir_readdir(tmp_dir, tmp);  // case for ".."
 
   bool success = false;
   if (!dir_readdir(tmp_dir, tmp)) {
@@ -245,7 +250,7 @@ bool symlink_create(disk_sector_t sector, const char *path,
                     disk_sector_t start_dir_sector) {
   struct symlink_entry e;
   bool success = false;
-  if (inode_create(sector, sizeof(struct symlink_entry), (file_type_t)2)) {
+  if (inode_create(sector, sizeof(struct symlink_entry), FILETYPE_SYMLINK)) {
     struct inode *inode = inode_open(sector);
     strlcpy(e.path, path, sizeof(e.path));
     e.start_dir_sector = start_dir_sector;

@@ -16,9 +16,10 @@
 /* On-disk inode.
  * Must be exactly DISK_SECTOR_SIZE bytes long. */
 struct inode_disk {
-  disk_sector_t start;  /* First data sector. */
-  off_t length;         /* File size in bytes. */
-  file_type_t type;     /* 0 is regular file, 1 is directory, 2 is soft link. */
+  disk_sector_t start; /* First data sector. */
+  off_t length;        /* File size in bytes. */
+  enum file_type_t
+      type;             /* 0 is regular file, 1 is directory, 2 is soft link. */
   unsigned magic;       /* Magic number. */
   uint32_t unused[124]; /* Not used. */
 };
@@ -75,7 +76,7 @@ void inode_init(void) { list_init(&open_inodes); }
  * disk.
  * Returns true if successful.
  * Returns false if memory or disk allocation fails. */
-bool inode_create(disk_sector_t sector, off_t length, file_type_t type) {
+bool inode_create(disk_sector_t sector, off_t length, enum file_type_t type) {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -201,7 +202,7 @@ void inode_close(struct inode *inode) {
     if (inode->removed) {
 #ifdef EFILESYS
       fat_remove_chain(inode->sector, 0);
-      if (inode_file_type(inode) != (file_type_t)2) {
+      if (inode_file_type(inode) != FILETYPE_SYMLINK) {
         fat_remove_chain(inode->data.start, 0);
       }
 #else
@@ -330,6 +331,11 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size,
   }
   free(bounce);
 
+  if (size + offset > inode_length(inode)) {
+    inode->data.length = size + offset;
+    disk_write(filesys_disk, inode->sector, &inode->data);
+  }
+
   return bytes_written;
 }
 
@@ -371,7 +377,7 @@ off_t inode_length(const struct inode *inode) {
   return inode->data.length;
 }
 
-file_type_t inode_file_type(struct inode *inode) {
+enum file_type_t inode_file_type(struct inode *inode) {
   ASSERT(inode != NULL);
   return inode->data.type;
 }
