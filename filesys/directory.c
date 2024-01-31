@@ -102,6 +102,10 @@ static bool lookup(const struct dir *dir, const char *name,
 
   if (strlen(name) == 0) {
     // same as .
+    ofs = 0;
+    inode_read_at(dir->inode, &e, sizeof e, ofs);
+    if (ep != NULL) *ep = e;
+    if (ofsp != NULL) *ofsp = ofs;
     return true;
   }
 
@@ -197,6 +201,9 @@ bool dir_remove(struct dir *dir, const char *name) {
   inode = inode_open(e.inode_sector);
   if (inode == NULL) goto done;
 
+  if (inode_get_inumber(inode) == ROOT_DIR_SECTOR) {
+    goto done;
+  }
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at(dir->inode, &e, sizeof e, ofs) != sizeof e) goto done;
